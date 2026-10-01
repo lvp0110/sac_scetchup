@@ -6,11 +6,24 @@
 
 ## Установка
 
-1. Соберите пакет: `sh script/build_rbz.sh`
-2. В SketchUp: Window → Extension Manager → Install Extension… и выберите `dist/SAC_EASE.rbz`
-3. Перезапустите SketchUp. На панели инструментов появится кнопка **SAC** (чёрный текст на белом фоне). Она открывает проверку модели. Та же команда есть в Extensions → SAC EASE → Подготовка для EASE. Если панели не видно: View → Toolbars → SAC EASE.
+Один и тот же файл ставится на Mac и на Windows. Нужен SketchUp 2019 или новее.
 
-Либо скопируйте `sac_ease_prep.rb` и папку `sac_ease_prep` в папку Plugins.
+1. Скачайте `dist/SAC_EASE.rbz` из репозитория.
+2. В SketchUp откройте **Window → Extension Manager → Install Extension…** и выберите этот файл.
+3. Если SketchUp спросит про неподписанное расширение, разрешите загрузку.
+4. Перезапустите SketchUp.
+
+Кнопка **SAC** открывает проверку. Та же команда: **Extensions → SAC EASE → Подготовка для EASE**.
+
+Если панели не видно:
+
+- Windows: **View → Toolbars → SAC EASE**
+- Mac: **View → Tool Palettes → SAC EASE**
+
+Можно поставить без менеджера расширений, двойным щелчком по файлу из папки проекта:
+
+- Mac: `install_mac.command`
+- Windows: `install_windows.bat`
 
 ## Что делает проверка
 

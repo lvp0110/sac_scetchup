@@ -28,7 +28,7 @@ module SAC
           height: 760,
           style: UI::HtmlDialog::STYLE_DIALOG
         )
-        dialog.set_file(File.join(File.dirname(__FILE__), "ui", "index.html"))
+        dialog.set_file(File.join(File.dirname(__FILE__), "ui", "index.html").tr("\\", "/"))
         dialog.set_on_closed { @dialog = nil }
         dialog.add_action_callback("command") do |_context, raw|
           handle(dialog, raw)

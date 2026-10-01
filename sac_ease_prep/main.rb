@@ -5,10 +5,10 @@ require "sketchup.rb"
 
 module SAC
   module EasePrep
-    ROOT = File.dirname(__FILE__).freeze
+    ROOT = File.dirname(__FILE__).tr("\\", "/").freeze
 
     %w[version geom_math settings support scanner analyzer fixes exporter highlight dialog].each do |name|
-      Sketchup.require File.join(ROOT, name)
+      Sketchup.require "#{ROOT}/#{name}"
     end
 
     unless file_loaded?(__FILE__)
@@ -16,9 +16,8 @@ module SAC
       command.tooltip = "SAC EASE — подготовка модели"
       command.status_bar_text = "Замкнутость, отверстия, ориентация граней, толщина, детализация, теги."
       command.menu_text = "Подготовка для EASE"
-      icons = File.join(ROOT, "icons")
-      command.small_icon = File.join(icons, "sac_24.png")
-      command.large_icon = File.join(icons, "sac_32.png")
+      command.small_icon = "#{ROOT}/icons/sac_24.png"
+      command.large_icon = "#{ROOT}/icons/sac_32.png"
 
       menu = UI.menu("Extensions")
       submenu = menu.add_submenu("SAC EASE")
