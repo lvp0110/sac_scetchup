@@ -1,0 +1,22 @@
+# encoding: UTF-8
+# frozen_string_literal: true
+
+require "sketchup.rb"
+require "extensions.rb"
+
+module SAC
+  module EasePrep
+    EXTENSION_NAME = "SAC EASE".freeze
+    EXTENSION_VERSION = "0.1.0".freeze
+
+    unless file_loaded?(__FILE__)
+      extension = SketchupExtension.new(EXTENSION_NAME, "sac_ease_prep/main")
+      extension.description = "Находит в модели SketchUp несоответствия требованиям импорта в EASE 4/5 и исправляет их: замкнутость, отверстия, ориентация граней, толщина, детализация, теги и материалы."
+      extension.version = EXTENSION_VERSION
+      extension.creator = "SAC"
+      extension.copyright = "2026 SAC"
+      Sketchup.register_extension(extension, true)
+      file_loaded(__FILE__)
+    end
+  end
+end

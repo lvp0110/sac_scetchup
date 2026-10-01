@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SAC</title>
+  <style>
+    :root {
+      --ink: #1c1915;
+      --muted: #5e584f;
+      --line: #e3dcd0;
+      --paper: #f3efe7;
+      --panel: #faf7f2;
+      --side: #1a2422;
+      --side-text: #e7e1d6;
+      --side-dim: #a8b2ac;
+      --teal: #0f6e68;
+      --teal-deep: #0b524d;
+      --ok: #1d7a45;
+      --warn: #8d5b10;
+      --err: #9d342c;
+      --ok-bg: #e5f3ea;
+      --warn-bg: #f8efd8;
+      --err-bg: #f8e6e3;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; }
+    img { max-width: 100%; }
+    body {
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    button, input, select { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+
+    .app {
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+      height: 100%;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .side {
+      background: var(--side);
+      color: var(--side-text);
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .brand {
+      background: #fff;
+      padding: 8px 10px;
+      flex: none;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .brand img {
+      display: block;
+      width: auto;
+      max-width: 100%;
+      height: 58px;
+      margin: 0 auto;
+      object-fit: contain;
+      object-position: center;
+    }
+
+    nav {
+      padding: 6px;
+      overflow: hidden;
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    nav button {
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      color: var(--side-text);
+      border: 0;
+      border-bottom: 1px solid #fff;
+      padding: 0 8px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex: 1 1 0;
+      max-height: 42px;
+      min-height: 0;
+      min-width: 0;
+    }
+    nav button span {
+      flex: 1;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    nav button small {
+      color: var(--side-dim);
+      font-variant-numeric: tabular-nums;
+      width: 1.4em;
+      flex: none;
+    }
+    nav button.active { background: rgba(255, 255, 255, 0.08); }
+    nav button:hover { background: rgba(255, 255, 255, 0.05); }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-left: auto;
+      background: transparent;
+      flex: none;
+    }
+    .dot.ok { background: #3cba7a; }
+    .dot.warning { background: #e2b15a; }
+    .dot.error { background: #e07a72; }
+
+    .main {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+    }
+
+    header.bar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      flex-wrap: wrap;
+    }
+
+    .seg {
+      display: inline-flex;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .seg button, .scope button {
+      border: 0;
+      background: transparent;
+      padding: 6px 12px;
+    }
+    .seg button.on, .scope button.on {
+      background: var(--ink);
+      color: #f6f1e8;
+    }
+    .scope {
+      display: inline-flex;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    .actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+
+    .btn {
+      border: 1px solid transparent;
+      border-radius: 999px;
+      padding: 7px 14px;
+      background: var(--teal);
+      color: white;
+      white-space: normal;
+      text-align: center;
+    }
+    .btn:hover { background: var(--teal-deep); }
+    .btn.secondary {
+      background: transparent;
+      color: var(--ink);
+      border-color: #cfc6b8;
+    }
+    .btn.secondary:hover { background: #fff; }
+    .btn:disabled { opacity: 0.45; cursor: default; }
+
+    .content {
+      padding: 18px 20px 28px;
+      overflow: auto;
+      min-height: 0;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .stat {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+      min-width: 0;
+    }
+    .stat b {
+      display: block;
+      font-size: 22px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 650;
+      overflow-wrap: anywhere;
+    }
+    .stat span { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+
+    .lead {
+      max-width: 68ch;
+      color: var(--muted);
+      margin: 0 0 14px;
+      overflow-wrap: anywhere;
+    }
+
+    .cat-list { display: flex; flex-direction: column; gap: 8px; }
+    .cat-row {
+      width: 100%;
+      text-align: left;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: start;
+      min-width: 0;
+    }
+    .cat-row:hover { border-color: #c9bfb0; }
+    .idx {
+      font-variant-numeric: tabular-nums;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .cat-row > span:nth-child(2) { min-width: 0; }
+    .cat-row strong, .cat-row em { overflow-wrap: anywhere; }
+    .cat-row strong { display: block; }
+    .cat-row em { font-style: normal; color: var(--muted); font-size: 12px; }
+    .pill {
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 12px;
+      background: var(--ok-bg);
+      color: var(--ok);
+      white-space: nowrap;
+    }
+    .pill.warning { background: var(--warn-bg); color: var(--warn); }
+    .pill.error { background: var(--err-bg); color: var(--err); }
+
+    .issue {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-left-width: 4px;
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      min-width: 0;
+    }
+    .issue.error { border-left-color: var(--err); }
+    .issue.warning { border-left-color: #c8882a; }
+    .issue h3 { margin: 0 0 4px; font-size: 15px; overflow-wrap: anywhere; }
+    .issue p { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
+    .issue .row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      min-width: 0;
+    }
+    .issue .copy { flex: 1 1 200px; min-width: 0; }
+    .issue .buttons { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 auto; }
+
+    .empty {
+      padding: 28px 8px;
+      color: var(--muted);
+    }
+
+    .status {
+      min-height: 18px;
+      font-size: 12px;
+      color: var(--muted);
+      padding: 0 2px 8px;
+    }
+    .status.error { color: var(--err); }
+    .status.ok { color: var(--ok); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+      border-radius: 12px;
+      overflow: hidden;
+      margin: 8px 0 16px;
+      table-layout: fixed;
+    }
+    th, td {
+      text-align: left;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--line);
+      font-variant-numeric: tabular-nums;
+      overflow-wrap: anywhere;
+    }
+    th { color: var(--muted); font-weight: 600; font-size: 12px; }
+
+    .settings {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(96px, 140px);
+      gap: 8px 16px;
+      max-width: 640px;
+      align-items: center;
+    }
+    .settings label { color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+    .settings input[type="number"] {
+      border: 1px solid var(--line);
+      background: white;
+      border-radius: 8px;
+      padding: 6px 8px;
+      width: 100%;
+    }
+    .check {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      margin: 10px 0;
+      max-width: 68ch;
+    }
+    h2 { margin: 0 0 8px; font-size: 22px; font-weight: 650; overflow-wrap: anywhere; }
+    h3.section { margin: 18px 0 8px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+
+    .banner {
+      background: var(--err-bg);
+      color: var(--err);
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+      overflow-wrap: anywhere;
+    }
+    .banner.warn { background: var(--warn-bg); color: var(--warn); }
+
+    @media (max-height: 560px) {
+      .brand { padding: 4px 8px; }
+      .brand img { height: 40px; }
+      nav {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-rows: repeat(3, 32px);
+        gap: 3px;
+        align-content: start;
+      }
+      nav button {
+        flex: none;
+        max-height: none;
+        height: 32px;
+        padding: 0 5px;
+        font-size: 12px;
+        gap: 4px;
+      }
+      nav button small { display: none; }
+    }
+
+    @media (max-width: 680px) {
+      .app {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: 140px minmax(0, 1fr);
+      }
+      .side {
+        display: grid;
+        grid-template-columns: 78px minmax(0, 1fr);
+        max-height: 140px;
+        height: 140px;
+      }
+      .brand {
+        padding: 6px;
+        display: flex;
+        align-items: center;
+      }
+      .brand img { height: 36px; }
+      nav {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-rows: repeat(3, auto);
+        gap: 2px;
+        padding: 6px 6px 6px 0;
+        align-content: center;
+      }
+      nav button {
+        flex: none;
+        max-height: none;
+        height: auto;
+        padding: 8px;
+        border-radius: 0;
+        gap: 0;
+      }
+      nav button small { display: none; }
+      header.bar { align-items: stretch; min-width: 0; }
+      .actions { margin-left: 0; width: 100%; }
+      .seg, .scope { flex-wrap: wrap; max-width: 100%; }
+      .settings { grid-template-columns: minmax(0, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="side">
+      <div class="brand">
+        <img src="logo.png" alt="SAC — Simple Acoustic Calculation in SketchUp">
+      </div>
+      <nav id="nav"></nav>
+    </aside>
+    <section class="main">
+      <header class="bar">
+        <div class="seg" id="version">
+          <button type="button" data-value="4">EASE 4</button>
+          <button type="button" data-value="5">EASE 5</button>
+        </div>
+        <div class="scope" id="scope">
+          <button type="button" data-value="model">Вся модель</button>
+          <button type="button" data-value="selection">Выделение</button>
+        </div>
+        <div class="actions">
+          <button class="btn secondary" id="fix-safe" type="button">Исправить безопасное</button>
+          <button class="btn" id="check" type="button">Проверить модель</button>
+        </div>
+      </header>
+      <div class="content">
+        <div class="status" id="status"></div>
+        <div id="view"></div>
+      </div>
+    </section>
+  </div>
+  <script>
+    const state = {
+      page: "overview",
+      settings: {
+        ease_version: 5,
+        scope: "model",
+        min_edge_mm: 20,
+        min_area_m2: 0.01,
+        min_thickness_mm: 10,
+        weld_mm: 1,
+        max_curve_segments: 24,
+        max_smooth_faces: 40,
+        small_object_mm: 300,
+        detail_face_limit: 40,
+        remove_materials: true,
+        triangulate_nonconvex: false
+      },
+      categories: [],
+      report: null,
+      version: ""
+    };
+
+    const pages = [
+      { id: "overview", index: "•", title: "Обзор", short: "Обзор" },
+      { id: "settings", index: "•", title: "Пороги", short: "Пороги" },
+      { id: "export", index: "•", title: "Экспорт", short: "Экспорт" }
+    ];
+
+    const shortTitles = {
+      overview: "Обзор",
+      watertight: "Объём",
+      holes: "Отверстия",
+      orientation: "Ориентация",
+      thickness: "Толщина",
+      detail: "Детали",
+      materials: "Теги",
+      settings: "Пороги",
+      export: "Экспорт"
+    };
+
+    function send(payload) {
+      payload.settings = state.settings;
+      if (window.sketchup && window.sketchup.command) {
+        window.sketchup.command(JSON.stringify(payload));
+      }
+    }
+
+    function setStatus(text, level) {
+      const node = document.getElementById("status");
+      node.textContent = text || "";
+      node.className = "status" + (level ? " " + level : "");
+    }
+
+    window.SAC = {
+      receive(message) {
+        if (message.type === "bootstrap") {
+          state.settings = message.settings;
+          state.categories = message.categories;
+          state.version = message.version;
+          syncControls();
+          render();
+        } else if (message.type === "report") {
+          state.report = message.report;
+          if (message.settings) state.settings = message.settings;
+          syncControls();
+          const errors = state.report.stats.errors;
+          const warnings = state.report.stats.warnings;
+          setStatus(
+            errors || warnings
+              ? "Ошибок: " + errors + ", предупреждений: " + warnings + "."
+              : "Проверка закончена, критичных замечаний нет.",
+            errors ? "error" : "ok"
+          );
+          render();
+        } else if (message.type === "status") {
+          setStatus(message.text, message.level);
+        }
+      }
+    };
+
+    function syncControls() {
+      document.querySelectorAll("#version button").forEach((button) => {
+        button.classList.toggle("on", Number(button.dataset.value) === Number(state.settings.ease_version));
+      });
+      document.querySelectorAll("#scope button").forEach((button) => {
+        button.classList.toggle("on", button.dataset.value === state.settings.scope);
+      });
+    }
+
+    function navItems() {
+      const cats = (state.report && state.report.categories && state.report.categories.length)
+        ? state.report.categories
+        : state.categories;
+      return [pages[0]].concat(cats).concat(pages.slice(1));
+    }
+
+    function renderNav() {
+      const nav = document.getElementById("nav");
+      nav.innerHTML = "";
+      navItems().forEach((item) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.title = item.title;
+        if (item.id === state.page) button.classList.add("active");
+        const index = document.createElement("small");
+        index.textContent = item.index || "•";
+        const title = document.createElement("span");
+        title.textContent = item.short || shortTitles[item.id] || item.title;
+        button.appendChild(index);
+        button.appendChild(title);
+        if (item.status) {
+          const dot = document.createElement("i");
+          dot.className = "dot " + item.status;
+          button.appendChild(dot);
+        }
+        button.addEventListener("click", () => {
+          state.page = item.id;
+          render();
+        });
+        nav.appendChild(button);
+      });
+    }
+
+    function render() {
+      renderNav();
+      const view = document.getElementById("view");
+      if (state.page === "overview") view.innerHTML = overviewHtml();
+      else if (state.page === "settings") view.innerHTML = settingsHtml();
+      else if (state.page === "export") view.innerHTML = exportHtml();
+      else view.innerHTML = categoryHtml(state.page);
+      bindView();
+    }
+
+    function overviewHtml() {
+      const report = state.report;
+      if (!report) {
+        return "<h2>Модель для EASE</h2><p class=\"lead\">Плагин ищет щели, отверстия в гранях, вывернутые плоскости, листы без толщины, мелкий декор и грани без тегов. Безопасное исправление не удаляет кресла и лепнину — только чинит геометрию оболочки.</p><p class=\"empty\">Нажмите «Проверить модель».</p>";
+      }
+      if (report.blocked) return "<div class=\"banner\">" + escapeHtml(report.blocked) + "</div>";
+      const stats = report.stats;
+      const volume = stats.room_volume_m3 == null ? "—" : stats.room_volume_m3.toFixed(2) + " м³";
+      const closed = stats.closed ? "замкнут" : "не замкнут";
+      return ""
+        + "<h2>Результат проверки</h2>"
+        + "<div class=\"stats\">"
+        + stat(String(stats.faces), "граней в определениях")
+        + stat(volume, "объём зала, " + closed)
+        + stat(String(stats.errors), "ошибок")
+        + stat(String(stats.warnings), "предупреждений")
+        + "</div>"
+        + "<div class=\"cat-list\">"
+        + report.categories.map((category) => {
+          const label = category.status === "ok" ? "в порядке" : (category.status === "error" ? "ошибка" : "замечание");
+          return "<button type=\"button\" class=\"cat-row\" data-page=\"" + category.id + "\">"
+            + "<span class=\"idx\">" + category.index + "</span>"
+            + "<span><strong>" + escapeHtml(category.title) + "</strong><em>" + escapeHtml(category.text) + "</em></span>"
+            + "<span class=\"pill " + category.status + "\">" + label + "</span></button>";
+        }).join("")
+        + "</div>"
+        + shellTable(report.shells);
+    }
+
+    function stat(value, label) {
+      return "<div class=\"stat\"><b>" + escapeHtml(value) + "</b><span>" + escapeHtml(label) + "</span></div>";
+    }
+
+    function shellTable(shells) {
+      if (!shells || !shells.length) return "";
+      const rows = shells.map((shell) => {
+        const role = shell.role === "room" ? "зал" : "тело";
+        const closed = shell.closed ? "да" : "нет";
+        const volume = shell.volume_m3 == null ? "—" : shell.volume_m3.toFixed(2);
+        return "<tr><td>" + escapeHtml(shell.label) + "</td><td>" + role + "</td><td>" + closed + "</td><td>" + shell.faces + "</td><td>" + shell.area_m2.toFixed(2) + "</td><td>" + volume + "</td></tr>";
+      }).join("");
+      return "<h3 class=\"section\">Оболочки</h3><table><thead><tr><th>Объект</th><th>Роль</th><th>Замкнута</th><th>Грани</th><th>Площадь, м²</th><th>Объём, м³</th></tr></thead><tbody>" + rows + "</tbody></table>";
+    }
+
+    function categoryHtml(id) {
+      const category = (state.report ? state.report.categories : state.categories).find((item) => item.id === id)
+        || state.categories.find((item) => item.id === id);
+      if (!category) return "";
+      const issues = state.report ? state.report.issues.filter((issue) => issue.category === id) : [];
+      let body = "<h2>" + escapeHtml(category.title) + "</h2><p class=\"lead\">" + escapeHtml(category.text) + "</p>";
+      if (!state.report) body += "<p class=\"empty\">Сначала запустите проверку.</p>";
+      else if (!issues.length) body += "<p class=\"empty\">Замечаний нет.</p>";
+      else body += issues.map(issueHtml).join("");
+      if (id === "materials" && state.report) body += tagTable(state.report.tags) + tagActions();
+      return body;
+    }
+
+    function issueHtml(issue) {
+      const buttons = [];
+      if (issue.focus_pids && issue.focus_pids.length) {
+        buttons.push("<button type=\"button\" class=\"btn secondary\" data-focus=\"" + issue.id + "\">Показать</button>");
+      }
+      if (issue.fixable) {
+        buttons.push("<button type=\"button\" class=\"btn\" data-fix=\"" + issue.id + "\" data-fix-type=\"" + (issue.fix_type || "") + "\">Исправить</button>");
+      }
+      return "<article class=\"issue " + issue.severity + "\"><div class=\"row\"><div class=\"copy\"><h3>" + escapeHtml(issue.title) + (issue.count ? " · " + issue.count : "") + "</h3><p>" + escapeHtml(issue.detail) + "</p></div><div class=\"buttons\">" + buttons.join("") + "</div></div></article>";
+    }
+
+    function tagTable(tags) {
+      if (!tags || !tags.length) return "";
+      const rows = tags.map((tag) => "<tr><td>" + escapeHtml(tag.name) + "</td><td>" + tag.faces + "</td><td>" + tag.area_m2.toFixed(2) + "</td></tr>").join("");
+      return "<h3 class=\"section\">Грани по тегам</h3><table><thead><tr><th>Тег</th><th>Грани</th><th>Площадь, м²</th></tr></thead><tbody>" + rows + "</tbody></table>";
+    }
+
+    function tagActions() {
+      return "<p><button type=\"button\" class=\"btn secondary\" id=\"make-tags\">Создать набор тегов</button></p>";
+    }
+
+    function settingsHtml() {
+      const s = state.settings;
+      return "<h2>Пороги</h2><p class=\"lead\">Значения для этой модели. Мелкой считается геометрия ниже порога. Сварка соединяет вершины границы, которые почти совпали.</p>"
+        + "<div class=\"settings\">"
+        + field("min_edge_mm", "Короткое ребро, мм", s.min_edge_mm, "0.1")
+        + field("min_area_m2", "Мелкая грань, м²", s.min_area_m2, "0.0001")
+        + field("min_thickness_mm", "Минимальная толщина, мм", s.min_thickness_mm, "0.1")
+        + field("weld_mm", "Щель для сварки, мм", s.weld_mm, "0.01")
+        + field("small_object_mm", "Мелкий объект, мм", s.small_object_mm, "1")
+        + field("detail_face_limit", "Граней в мелком объекте", s.detail_face_limit, "1")
+        + field("max_curve_segments", "Сегментов на дугу", s.max_curve_segments, "1")
+        + field("max_smooth_faces", "Граней в сглаженном участке", s.max_smooth_faces, "1")
+        + "</div>"
+        + "<label class=\"check\"><input type=\"checkbox\" id=\"remove_materials\"" + (s.remove_materials ? " checked" : "") + "> Снимать материалы SketchUp при безопасном исправлении и оставлять Default</label>"
+        + "<label class=\"check\"><input type=\"checkbox\" id=\"triangulate_nonconvex\"" + (s.triangulate_nonconvex ? " checked" : "") + "> Заодно резать невыпуклые грани на треугольники. Лишние полигоны замедляют расчёт, включайте только если EASE спотыкается на форме.</label>";
+    }
+
+    function field(id, label, value, step) {
+      return "<label for=\"" + id + "\">" + label + "</label><input id=\"" + id + "\" type=\"number\" step=\"" + step + "\" value=\"" + value + "\">";
+    }
+
+    function exportHtml() {
+      const version = Number(state.settings.ease_version) === 4 ? "DXF, 3D-грани, AutoCAD 2013" : "DWG, 3D-грани, AutoCAD 2013";
+      const errors = state.report ? state.report.stats.errors : null;
+      const note = errors ? "<div class=\"banner warn\">В последней проверке осталось ошибок: " + errors + ". EASE может не посчитать объём, пока они не закрыты.</div>" : "";
+      return "<h2>Экспорт</h2><p class=\"lead\">Для EASE " + state.settings.ease_version + " будет записан " + version + ". Рёбра без граней, размеры, текст, направляющие и материалы не выгружаются: акустику задают теги и сами плоскости. SketchUp не пишет ACIS-солиды, только плоские 3D Face.</p>"
+        + note
+        + "<p class=\"lead\">Перед выгрузкой имеет смысл очистить неиспользуемые определения, материалы и теги — то же, что Model Info → Statistics → Purge Unused.</p>"
+        + "<div class=\"actions\"><button type=\"button\" class=\"btn secondary\" id=\"purge\">Очистить неиспользуемое</button><button type=\"button\" class=\"btn\" id=\"export\">Экспортировать</button></div>";
+    }
+
+    function bindView() {
+      document.querySelectorAll("[data-page]").forEach((node) => {
+        node.addEventListener("click", () => {
+          state.page = node.getAttribute("data-page");
+          render();
+        });
+      });
+      document.querySelectorAll("[data-focus]").forEach((node) => {
+        node.addEventListener("click", () => send({ action: "focus", id: node.getAttribute("data-focus") }));
+      });
+      document.querySelectorAll("[data-fix]").forEach((node) => {
+        node.addEventListener("click", () => {
+          const type = node.getAttribute("data-fix-type");
+          if (!confirmFix(type)) return;
+          setStatus("Исправляю…", "");
+          send({ action: "fix", id: node.getAttribute("data-fix") });
+        });
+      });
+      const tags = document.getElementById("make-tags");
+      if (tags) tags.addEventListener("click", () => send({ action: "tags" }));
+      const purge = document.getElementById("purge");
+      if (purge) purge.addEventListener("click", () => {
+        if (!confirm("Удалить неиспользуемые материалы, теги, компоненты и стили?")) return;
+        send({ action: "purge" });
+      });
+      const exp = document.getElementById("export");
+      if (exp) exp.addEventListener("click", () => {
+        readSettings();
+        const errors = state.report ? state.report.stats.errors : 0;
+        if (errors && !confirm("В модели ещё есть ошибки (" + errors + "). Экспортировать всё равно?")) return;
+        send({ action: "export" });
+      });
+      document.querySelectorAll(".settings input, .check input").forEach((input) => {
+        input.addEventListener("change", readSettings);
+      });
+    }
+
+    function confirmFix(type) {
+      const messages = {
+        erase_objects: "Удалить эти группы и компоненты из модели?",
+        erase_hidden: "Удалить скрытые грани? В оболочке могут появиться дыры.",
+        erase_annotations: "Удалить размеры, тексты, направляющие и сечения?",
+        thicken: "Выдавить грань на заданную минимальную толщину?",
+        assign_tags: "Назначить теги Пол, Потолок и Стены по направлению лицевой стороны? Сначала лучше исправить ориентацию."
+      };
+      if (!messages[type]) return true;
+      return confirm(messages[type]);
+    }
+
+    function readSettings() {
+      const numeric = ["min_edge_mm", "min_area_m2", "min_thickness_mm", "weld_mm", "small_object_mm", "detail_face_limit", "max_curve_segments", "max_smooth_faces"];
+      numeric.forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) state.settings[id] = Number(input.value);
+      });
+      const materials = document.getElementById("remove_materials");
+      const convex = document.getElementById("triangulate_nonconvex");
+      if (materials) state.settings.remove_materials = materials.checked;
+      if (convex) state.settings.triangulate_nonconvex = convex.checked;
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    document.getElementById("version").addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      state.settings.ease_version = Number(button.dataset.value);
+      syncControls();
+      if (state.page === "export") render();
+    });
+    document.getElementById("scope").addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      state.settings.scope = button.dataset.value;
+      syncControls();
+    });
+    document.getElementById("check").addEventListener("click", () => {
+      readSettings();
+      setStatus("Проверяю модель…", "");
+      send({ action: "check" });
+    });
+    document.getElementById("fix-safe").addEventListener("click", () => {
+      readSettings();
+      if (!confirm("Безопасное исправление сварит близкие вершины, закроет плоские проёмы гранью, сольёт компланарные грани, развернёт лицевые стороны внутрь зала и разрежет отверстия. Декор и кресла не удаляются. Продолжить?")) return;
+      setStatus("Исправляю…", "");
+      send({ action: "fix_safe" });
+    });
+
+    send({ action: "bootstrap" });
+  </script>
+</body>
+</html>
