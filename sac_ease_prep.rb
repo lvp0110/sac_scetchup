@@ -11,7 +11,7 @@ module SAC
 
     unless file_loaded?(__FILE__)
       extension = SketchupExtension.new(EXTENSION_NAME, "sac_ease_prep/main")
-      extension.description = "Находит в модели SketchUp несоответствия требованиям импорта в EASE 4/5 и исправляет их: замкнутость, отверстия, ориентация граней, толщина, детализация, теги и материалы."
+      extension.description = "Готовит модель SketchUp к импорту в EASE: замкнутый объём, лицевые стороны наружу, отверстия, слои Two-Fold, толщина тел, детализация и теги."
       extension.version = EXTENSION_VERSION
       extension.creator = "SAC"
       extension.copyright = "2026 SAC"

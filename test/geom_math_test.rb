@@ -42,6 +42,17 @@ module SAC
         assert_equal [[0, 1]], pairs.map { |i, j, _dist| [i, j] }
       end
 
+      def test_two_fold_layer_name
+        assert_equal ["Окна", "Окна"], GeomMath.two_fold_parts("Окна $ Окна")
+        assert_equal ["FrontMat", "RearMat"], GeomMath.two_fold_parts("  FrontMat $ RearMat ")
+        assert_nil GeomMath.two_fold_parts("Двери")
+        assert_nil GeomMath.two_fold_parts("Окна $")
+        assert_nil GeomMath.two_fold_parts("A $ B $ C")
+        assert_equal "Экран $ Экран", GeomMath.two_fold_name("Экран")
+        assert_equal "Окна $ Окна", GeomMath.two_fold_name("Окна $")
+        assert_equal "Грань $ Грань", GeomMath.two_fold_name(" $ ")
+      end
+
       def test_unit_conversion_roundtrip
         assert_in_delta 1.0, GeomMath.inches_to_m(1.0 / GeomMath::INCH_TO_M), 1e-9
         assert_in_delta 2.0, GeomMath.sq_inches_to_m2(GeomMath.m2_to_sq_inches(2.0)), 1e-9

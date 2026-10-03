@@ -60,7 +60,7 @@ module SAC
           end
         when "tags"
           Fixes.create_tags(model)
-          push(dialog, "status", { "text" => "Набор тегов создан: Стены, Пол, Потолок, Окна, Двери, Зрители, Сцена.", "level" => "ok" })
+          push(dialog, "status", { "text" => "Набор тегов создан: Стены, Пол, Потолок, Окна $ Окна, Двери, Зрители, Сцена.", "level" => "ok" })
         when "purge"
           Fixes.purge(model)
           run_check(dialog, model, nil)

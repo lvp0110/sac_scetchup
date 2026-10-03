@@ -8,7 +8,7 @@ module SAC
       TAG_FLOOR = "Пол".freeze
       TAG_CEILING = "Потолок".freeze
       TAG_WALLS = "Стены".freeze
-      PRESET_TAGS = [TAG_WALLS, TAG_FLOOR, TAG_CEILING, "Окна", "Двери", "Зрители", "Сцена"].freeze
+      PRESET_TAGS = [TAG_WALLS, TAG_FLOOR, TAG_CEILING, "Окна $ Окна", "Двери", "Зрители", "Сцена"].freeze
 
       module_function
 
@@ -21,6 +21,7 @@ module SAC
           second = Analyzer.analyze(model, settings)
           plans(second, "clear_materials").each { |plan| apply_plan(model, plan) } if settings.remove_materials
           plans(second, "reverse").each { |plan| apply_plan(model, plan) }
+          plans(second, "make_twofold").each { |plan| apply_plan(model, plan) }
           plans(second, "triangulate").each { |plan| apply_plan(model, plan) }
         end
       end
@@ -94,6 +95,10 @@ module SAC
           thicken_faces(model, plan["face_pids"], plan["distance"])
         when "assign_tags"
           assign_tags(model, plan["face_pids"])
+        when "make_twofold"
+          make_twofold(model, plan["face_pids"])
+        when "split_hole"
+          split_holed_faces(model, plan["face_pids"])
         end
       end
 
@@ -141,7 +146,7 @@ module SAC
           next unless faces.length == 2
           first, second = faces
           next unless first.normal.samedirection?(second.normal)
-          next unless first.coplanar_with?(second)
+          next unless Support.faces_coplanar?(first, second)
           edge.erase!
         rescue StandardError
           next
@@ -204,9 +209,10 @@ module SAC
           next unless face.is_a?(Sketchup::Face) && face.valid?
           next unless Support.untagged?(face.layer, model)
           normal = world_normal(face)
-          face.layer = if normal.z > 0.7
+          # Лицевая сторона смотрит из зала наружу: у пола вниз, у потолка вверх.
+          face.layer = if normal.z < -0.7
                          floor
-                       elsif normal.z < -0.7
+                       elsif normal.z > 0.7
                          ceiling
                        else
                          walls
@@ -218,6 +224,52 @@ module SAC
         transform = Geom::Transformation.new
         Support.instance_path_for(face).each { |instance| transform *= instance.transformation }
         Support.world_normal(face, transform)
+      end
+
+      def make_twofold(model, face_pids)
+        Support.live_entities(model, face_pids).each do |face|
+          next unless face.is_a?(Sketchup::Face) && face.valid?
+          label = if Support.untagged?(face.layer, model)
+                    "Грань"
+                  else
+                    face.layer.name.to_s
+                  end
+          face.layer = ensure_layer(model, GeomMath.two_fold_name(label))
+        end
+      end
+
+      def split_holed_faces(model, face_pids)
+        Support.live_entities(model, face_pids).each do |face|
+          next unless face.is_a?(Sketchup::Face) && face.valid?
+          pairs = split_pairs(face)
+          entities = Support.entities_of(face)
+          next unless entities
+          pairs.each do |start_point, end_point|
+            entities.add_line(start_point, end_point)
+          rescue StandardError
+            next
+          end
+        end
+      end
+
+      def split_pairs(face)
+        pairs = []
+        outer = face.outer_loop.vertices
+        face.loops.each do |loop|
+          next if loop.outer?
+          best = nil
+          best_dist = nil
+          outer.each do |outer_vertex|
+            loop.vertices.each do |inner_vertex|
+              distance = outer_vertex.position.distance(inner_vertex.position)
+              next if best_dist && distance >= best_dist
+              best_dist = distance
+              best = [outer_vertex.position, inner_vertex.position]
+            end
+          end
+          pairs << best if best && best_dist && best_dist > 1.0e-6
+        end
+        pairs
       end
 
       def ensure_layer(model, name)

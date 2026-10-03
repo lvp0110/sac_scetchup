@@ -188,6 +188,25 @@ module SAC
       def m2_to_sq_inches(area)
         area.to_f / (INCH_TO_M * INCH_TO_M)
       end
+
+      # Слой EASE 4 «лицевой $ тыльный»: один знак $ и имя с каждой стороны.
+      def two_fold_parts(name)
+        text = name.to_s.strip
+        return nil unless text.count("$") == 1
+        front, rear = text.split("$", 2)
+        front = front.to_s.strip
+        rear = rear.to_s.strip
+        return nil if front.empty? || rear.empty?
+        [front, rear]
+      end
+
+      def two_fold_name(name)
+        parts = two_fold_parts(name)
+        return "#{parts[0]} $ #{parts[1]}" if parts
+        base = name.to_s.split("$").map(&:strip).reject(&:empty?).first
+        base = "Грань" if base.nil? || base.empty?
+        "#{base} $ #{base}"
+      end
     end
   end
 end

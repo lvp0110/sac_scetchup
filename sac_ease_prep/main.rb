@@ -14,7 +14,7 @@ module SAC
     unless file_loaded?(__FILE__)
       command = UI::Command.new("Подготовка для EASE") { Dialog.open }
       command.tooltip = "SAC EASE — подготовка модели"
-      command.status_bar_text = "Замкнутость, отверстия, ориентация граней, толщина, детализация, теги."
+      command.status_bar_text = "Замкнутость, ориентация наружу, слой Two-Fold, отверстия, толщина, детализация, теги."
       command.menu_text = "Подготовка для EASE"
       command.small_icon = "#{ROOT}/icons/sac_24.png"
       command.large_icon = "#{ROOT}/icons/sac_32.png"

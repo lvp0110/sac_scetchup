@@ -100,6 +100,28 @@ module SAC
         end
       end
 
+      # Face#coplanar_with? есть не во всех версиях SketchUp 2019–2021.
+      def faces_coplanar?(first, second)
+        return first.coplanar_with?(second) if first.respond_to?(:coplanar_with?)
+        plane = first.plane
+        length = Math.sqrt((plane[0] * plane[0]) + (plane[1] * plane[1]) + (plane[2] * plane[2]))
+        return false if length < 1.0e-9
+        first_point = first.outer_loop.vertices.first.position
+        second.outer_loop.vertices.all? do |vertex|
+          point = vertex.position
+          value = (plane[0] * point.x) + (plane[1] * point.y) + (plane[2] * point.z) + plane[3]
+          (value / length).abs <= 0.001
+        end && point_on_plane?(first_point, second)
+      end
+
+      def point_on_plane?(point, face)
+        plane = face.plane
+        length = Math.sqrt((plane[0] * plane[0]) + (plane[1] * plane[1]) + (plane[2] * plane[2]))
+        return false if length < 1.0e-9
+        value = (plane[0] * point.x) + (plane[1] * point.y) + (plane[2] * point.z) + plane[3]
+        (value / length).abs <= 0.001
+      end
+
       def mirrored?(transform)
         xaxis = transform.xaxis
         yaxis = transform.yaxis

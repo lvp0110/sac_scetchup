@@ -43,6 +43,8 @@ module SAC
         check_group_gaps(containers)
         check_holes(containers)
         check_orientation(shells)
+        check_two_fold(shells)
+        check_two_fold_names(containers)
         check_thickness(shells)
         check_detail(occurrences, shells)
         check_materials(containers)
@@ -181,7 +183,7 @@ module SAC
           "face_copies" => copy_faces,
           "containers" => containers.count { |container| container[:faces].any? },
           "closed" => !room.nil?,
-          "room_volume_m3" => room ? GeomMath.cu_inches_to_m3(room[:volume].abs) : nil,
+          "room_volume_m3" => room ? GeomMath.cu_inches_to_m3(room[:volume]) : nil,
           "ease_version" => @settings.ease_version
         }
       end
@@ -249,7 +251,7 @@ module SAC
               "watertight",
               "warning",
               "Плоский проём можно закрыть гранью",
-              "Замкнутый плоский контур из #{cluster.length} рёбер. Для окна или двери нужна грань (стекло или полотно), а не дырка.",
+              "Замкнутый плоский контур из #{cluster.length} рёбер. Окно закройте гранью на слое «Материал $ Материал». Дверь — грань самой оболочки, без символа $.",
               count: cluster.length,
               focus: cluster,
               fix: "close_loops",
@@ -333,33 +335,24 @@ module SAC
 
       def check_holes(containers)
         containers.each do |container|
-          holed = []
+          passage = []
+          simple = []
           concave = []
+          transform = container[:occurrence].transform
           container[:faces].each do |face|
             if face.loops.any? { |loop| !loop.outer? }
-              holed << face
+              if passage_face?(face, transform)
+                passage << face
+              else
+                simple << face
+              end
             elsif !convex_face?(face)
               concave << face
             end
           end
-          if holed.any?
-            severity = @settings.ease4? ? "error" : "warning"
-            detail = if @settings.ease4?
-                       "EASE 4 закрывает внутренний контур сплошной гранью. Разрез на треугольники оставляет проём между полигонами."
-                     else
-                       "EASE 5 умеет искать отверстия сам, но явный разрез всё равно надёжнее."
-                     end
-            add_issue(
-              "holes",
-              severity,
-              "Отверстия внутри граней",
-              "#{container[:occurrence].label}: #{holed.length} граней с внутренним контуром. #{detail}",
-              count: holed.length,
-              focus: holed,
-              fix: "triangulate",
-              plan: { "face_pids" => pids(holed) }
-            )
-          end
+          report_passage(container, passage)
+          report_simple_holes(container, simple)
+          report_caps(container)
           if concave.any?
             issue_fix = @settings.triangulate_nonconvex ? "triangulate" : nil
             add_issue(
@@ -377,6 +370,111 @@ module SAC
           report_smooth_patches(container)
           report_coplanar(container)
         end
+      end
+
+      def report_passage(container, faces)
+        return if faces.empty?
+        blocked = container[:locked]
+        add_issue(
+          "holes",
+          "warning",
+          "Отверстие ведёт в соседнюю геометрию",
+          "#{container[:occurrence].label}: #{faces.length} граней с внутренним контуром, за которым есть поверхности с обеих сторон. Импорт EASE 4 закроет дырку, и соседняя комната не войдёт в объём зала — разрежьте грань минимум на две части. Колонну и закрытую нишу можно не резать: импорт сделает покрытие Coat of.",
+          count: faces.length,
+          focus: faces,
+          fix: blocked ? nil : "split_hole",
+          plan: blocked ? nil : { "face_pids" => pids(faces) }
+        )
+      end
+
+      def report_simple_holes(container, faces)
+        return if faces.empty?
+        if @settings.ease4?
+          add_issue(
+            "holes",
+            "warning",
+            "Внутренний контур грани",
+            "#{container[:occurrence].label}: #{faces.length} граней с отверстием. EASE 4 убирает контур у основной грани и строит меньшую грань с обратной ориентацией и флагом Coat of. Так оставляют колонну и нишу. Окно закройте отдельной гранью на слое «Материал $ Материал».",
+            count: faces.length,
+            focus: faces
+          )
+        else
+          add_issue(
+            "holes",
+            "warning",
+            "Отверстия внутри граней",
+            "#{container[:occurrence].label}: #{faces.length} граней с внутренним контуром. EASE 5 умеет искать отверстия сам, но явный разрез всё равно надёжнее.",
+            count: faces.length,
+            focus: faces,
+            fix: "triangulate",
+            plan: { "face_pids" => pids(faces) }
+          )
+        end
+      end
+
+      def report_caps(container)
+        caps = []
+        container[:faces].each do |face|
+          next unless face.loops.any? { |loop| !loop.outer? }
+          caps.concat(cap_faces(face))
+        end
+        caps.uniq!(&:persistent_id)
+        plain = caps.reject { |face| two_fold_face?(face) }
+        return if plain.empty?
+        add_issue(
+          "materials",
+          "warning",
+          "Грань в проёме без слоя Two-Fold",
+          "#{container[:occurrence].label}: #{plain.length} граней закрывают отверстие. Окно положите на слой «Окна $ Окна» — импорт EASE 4 включит Two fold. Дверь оставьте на слое без символа $: она часть наружной оболочки, а не двусторонняя грань.",
+          count: plain.length,
+          focus: plain
+        )
+      end
+
+      def cap_faces(face)
+        caps = []
+        face.loops.each do |loop|
+          next if loop.outer?
+          loop.edges.each do |edge|
+            edge.faces.each do |other|
+              next if other == face
+              caps << other if Support.faces_coplanar?(face, other)
+            end
+          end
+        end
+        caps
+      end
+
+      def passage_face?(face, transform)
+        normal = Support.world_normal(face, transform)
+        limit = passage_limit
+        face.loops.each do |loop|
+          next if loop.outer?
+          origin = hole_origin(loop, transform)
+          next unless origin
+          forward = ray_hit(origin.offset(normal, 5.mm), normal, limit)
+          backward_normal = normal.reverse
+          backward = ray_hit(origin.offset(backward_normal, 5.mm), backward_normal, limit)
+          return true if forward && backward
+        end
+        false
+      end
+
+      def hole_origin(loop, transform)
+        points = loop.vertices.map { |vertex| Support.point_array(vertex.position.transform(transform)) }
+        return nil if points.empty?
+        Geom::Point3d.new(*GeomMath.centroid(points))
+      end
+
+      def passage_limit
+        diag = @model.bounds.diagonal.to_f
+        diag < 1.mm ? 30.m : diag
+      end
+
+      def two_fold_face?(face)
+        layer = face.layer
+        return false if layer.nil?
+        !GeomMath.two_fold_parts(layer.name).nil?
       end
 
       def report_curves(container)
@@ -452,7 +550,7 @@ module SAC
           first, second = faces
           next if first.loops.length > 1 || second.loops.length > 1
           next unless first.normal.samedirection?(second.normal)
-          next unless first.coplanar_with?(second)
+          next unless Support.faces_coplanar?(first, second)
           next unless first.layer == second.layer
           next if first.material != second.material
           edges << edge
@@ -484,14 +582,14 @@ module SAC
           reversed = shell[:faces].select { |face| parity[:parity][face.persistent_id] == 1 }
           next if reversed.empty?
           title = if room
-                    "Лицевые стороны зала смотрят не внутрь"
+                    "Лицевые стороны зала смотрят не наружу"
                   else
                     "Внутреннее тело смотрит гранями внутрь себя"
                   end
           detail = if room
-                     "#{shell_title(shell)}: #{reversed.length} граней нужно перевернуть. В EASE лицевая сторона оболочки смотрит в зал. Сейчас отражения пойдут неверно."
+                     "#{shell_title(shell)}: #{reversed.length} граней нужно перевернуть. Снаружи зала должна быть видна светло-серая лицевая сторона. Голубая изнанка снаружи даёт отрицательный объём в Check Data."
                    else
-                     "#{shell_title(shell)}: #{reversed.length} граней смотрят внутрь тела. У подиума или перегородки лицевая сторона должна смотреть в воздух зала."
+                     "#{shell_title(shell)}: #{reversed.length} граней смотрят внутрь тела. У подиума или колонны лицевая сторона должна смотреть в воздух зала."
                    end
           mirror_states = shell[:copies].map(&:mirrored).uniq
           blocked = shell[:copies].any?(&:locked) || mirror_states.length > 1
@@ -519,23 +617,52 @@ module SAC
         )
       end
 
-      def check_thickness(shells)
+      def check_two_fold(shells)
         shells.each do |shell|
           next if shell[:role] == :room
-          next unless shell[:open_manifold] || (shell[:boundary].any? && !shell[:closed])
           next if shell[:nonmanifold]
-          single = shell[:faces].length == 1
+          next unless shell[:open_manifold] || (shell[:boundary].any? && !shell[:closed])
+          missing = shell[:faces].reject { |face| two_fold_face?(face) }
+          next if missing.empty?
+          blocked = shell[:copies].any?(&:locked)
           add_issue(
-            "thickness",
+            "materials",
             "error",
-            "Поверхность без толщины внутри модели",
-            "#{shell_title(shell)}: #{shell[:faces].length} граней не образуют тело. Перегородка, экран или ряд кресел должны иметь боковые грани. #{single ? "Можно выдавить грань на #{@settings.min_thickness_mm} мм." : "Выдавите оболочку Push/Pull вручную: у листа из нескольких граней автоматическое выдавливание ломает стыки."}",
-            count: shell[:faces].length,
-            focus: shell[:faces],
-            fix: single && !shell[:copies].any?(&:locked) ? "thicken" : nil,
-            plan: single ? { "face_pids" => pids(shell[:faces]), "distance" => @settings.min_thickness.to_f } : nil
+            "Двусторонняя грань без слоя Two-Fold",
+            "#{shell_title(shell)}: #{missing.length} граней открыты с обеих сторон. В EASE 4 такой поверхности нужен слой «Лицевой $ Тыльный», например «Экран $ Экран». Импорт сам включит Two fold.",
+            count: missing.length,
+            focus: missing,
+            fix: blocked ? nil : "make_twofold",
+            plan: blocked ? nil : { "face_pids" => pids(missing) }
           )
         end
+      end
+
+      def check_two_fold_names(containers)
+        bad = []
+        containers.each do |container|
+          container[:faces].each do |face|
+            layer = face.layer
+            next if layer.nil?
+            name = layer.name.to_s
+            next unless name.include?("$")
+            bad << face if GeomMath.two_fold_parts(name).nil?
+          end
+        end
+        return if bad.empty?
+        add_issue(
+          "materials",
+          "error",
+          "Слой Two-Fold назван неполно",
+          "Нужен один знак $ и имя материала с каждой стороны: «Окна $ Окна» или «Стена $ Экран». Пустая сторона импорт не примет.",
+          count: bad.length,
+          focus: bad,
+          fix: "make_twofold",
+          plan: { "face_pids" => pids(bad) }
+        )
+      end
+
+      def check_thickness(shells)
         shells.each do |shell|
           next unless shell[:closed]
           next if shell[:role] == :room
@@ -708,7 +835,7 @@ module SAC
           "materials",
           "warning",
           "Грани без акустического тега",
-          "#{untagged.length} граней на слое Untagged. Создайте теги вроде Стены, Пол, Потолок, Окна, Зрители и разложите грани. Автоназначение смотрит только направление уже правильно ориентированной грани.",
+          "#{untagged.length} граней на слое Untagged. Создайте теги вроде Стены, Пол, Потолок, Окна $ Окна, Двери. Автоназначение считает лицевую сторону смотрящей наружу из зала: пол вниз, потолок вверх.",
           count: untagged.length,
           focus: untagged,
           fix: "assign_tags",
@@ -773,13 +900,15 @@ module SAC
         end
         if shell[:closed]
           volume = volume_with_parity(faces, shell[:occurrence].transform, parity)
-          wrong = room ? volume > 1.0e-6 : volume < -1.0e-6
-          if wrong
+          # Положительный объём: лицевые стороны смотрят из оболочки наружу.
+          # У зала снаружи видна серая сторона, у внутреннего тела — воздух зала.
+          if volume < -1.0e-6
             parity.keys.each { |key| parity[key] = 1 - parity[key] }
           end
         else
           score = ray_score(faces, shell[:occurrence].transform, parity)
-          if score < 0
+          flip = room ? score > 0 : score < 0
+          if flip
             parity.keys.each { |key| parity[key] = 1 - parity[key] }
           end
         end
@@ -951,7 +1080,7 @@ module SAC
             "closed" => shell[:closed],
             "faces" => shell[:faces].length,
             "area_m2" => GeomMath.sq_inches_to_m2(shell[:area]),
-            "volume_m3" => shell[:volume] ? GeomMath.cu_inches_to_m3(shell[:volume].abs) : nil
+            "volume_m3" => shell[:volume] ? GeomMath.cu_inches_to_m3(shell[:volume]) : nil
           }
         end
       end
