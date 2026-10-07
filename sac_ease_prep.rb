@@ -7,7 +7,7 @@ require "extensions.rb"
 module SAC
   module EasePrep
     EXTENSION_NAME = "SAC EASE".freeze
-    EXTENSION_VERSION = "0.1.2".freeze
+    EXTENSION_VERSION = "0.1.3".freeze
 
     unless file_loaded?(__FILE__)
       extension = SketchupExtension.new(EXTENSION_NAME, "sac_ease_prep/main")

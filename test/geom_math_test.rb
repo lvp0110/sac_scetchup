@@ -49,6 +49,11 @@ module SAC
         assert_equal :split, GeomMath.hole_action(false, true)
       end
 
+      def test_ceiling_hole_is_not_cut
+        assert_equal :keep, GeomMath.hole_action(false, true, horizontal: true)
+        assert_equal :keep, GeomMath.hole_action(true, true, horizontal: true)
+      end
+
       def test_two_fold_layer_name
         assert_equal ["Окна", "Окна"], GeomMath.two_fold_parts("Окна $ Окна")
         assert_equal ["FrontMat", "RearMat"], GeomMath.two_fold_parts("  FrontMat $ RearMat ")

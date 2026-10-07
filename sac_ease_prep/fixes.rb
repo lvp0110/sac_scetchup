@@ -252,8 +252,8 @@ module SAC
       def split_holed_faces(model, face_pids)
         Support.live_entities(model, face_pids).each do |face|
           next unless face.is_a?(Sketchup::Face) && face.valid?
-          # Линия к краю грани стирает внутренний контур и открывает оболочку зала.
-          next if opens_closed_volume?(face)
+          # Линия к краю потолка или пола стирает внутренний контур и вскрывает объём.
+          next if horizontal_face?(face) || opens_closed_volume?(face)
           pairs = split_pairs(face)
           entities = Support.entities_of(face)
           next unless entities
@@ -263,6 +263,10 @@ module SAC
             next
           end
         end
+      end
+
+      def horizontal_face?(face)
+        world_normal(face).z.abs > 0.7
       end
 
       def opens_closed_volume?(face)

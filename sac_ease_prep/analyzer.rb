@@ -358,8 +358,9 @@ module SAC
           container[:faces].each do |face|
             if face.loops.any? { |loop| !loop.outer? }
               on_shell = closed_ids[face.persistent_id]
-              both_sides = on_shell ? false : passage_face?(face, transform)
-              if GeomMath.hole_action(on_shell, both_sides) == :split
+              horizontal = Support.world_normal(face, transform).z.abs > 0.7
+              both_sides = (on_shell || horizontal) ? false : passage_face?(face, transform)
+              if GeomMath.hole_action(on_shell, both_sides, horizontal: horizontal) == :split
                 passage << face
               else
                 simple << face
@@ -412,7 +413,7 @@ module SAC
             "holes",
             "warning",
             "Внутренний контур грани",
-            "#{container[:occurrence].label}: #{faces.length} граней с отверстием. На замкнутом зале контур остаётся: EASE строит покрытие Coat of и объём не вскрывается. Линия от отверстия к краю грани делает щель.",
+            "#{container[:occurrence].label}: #{faces.length} граней с отверстием, включая потолок. Контур остаётся: линия к краю грани вскрывает замкнутый объём потолка. EASE закрывает проём покрытием Coat of.",
             count: faces.length,
             focus: faces
           )
@@ -421,7 +422,7 @@ module SAC
             "holes",
             "warning",
             "Отверстия внутри граней",
-            "#{container[:occurrence].label}: #{faces.length} граней с отверстием. На замкнутом зале контур остаётся: импорт оставляет покрытие в проёме, объём не вскрывается.",
+            "#{container[:occurrence].label}: #{faces.length} граней с отверстием, включая потолок. Контур остаётся: линия к краю грани вскрывает замкнутый объём потолка.",
             count: faces.length,
             focus: faces
           )
