@@ -102,6 +102,27 @@ module SAC
         sum / 6.0
       end
 
+      # Треугольник смотрит туда же, куда нормаль грани. Иначе сетка SketchUp
+      # даёт отрицательный объём у уже правильного зала, и исправление его переворачивает.
+      def orient_triangle(p0, p1, p2, normal)
+        return [p0, p1, p2] if normal.nil? || length(normal) <= TOL
+        return [p0, p2, p1] if dot(cross(sub(p1, p0), sub(p2, p0)), normal) < 0
+        [p0, p1, p2]
+      end
+
+      # Внутренний контур SketchUp намотан против лицевой стороны.
+      # Разворот закрывает отверстие крышкой с той же нормалью, что у грани.
+      def loop_cap_triangles(points)
+        return [] if points.nil? || points.length < 3
+        ring = points.reverse
+        origin = ring[0]
+        triangles = []
+        (1...(ring.length - 1)).each do |index|
+          triangles << [origin, ring[index], ring[index + 1]]
+        end
+        triangles
+      end
+
       def triangle_area(p0, p1, p2)
         length(cross(sub(p1, p0), sub(p2, p0))) * 0.5
       end

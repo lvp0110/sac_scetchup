@@ -133,6 +133,8 @@ module SAC
         Support.live_entities(model, edge_pids).each do |edge|
           next unless edge.is_a?(Sketchup::Edge)
           next unless edge.valid?
+          # find_faces заливает внутренний контур и уничтожает Coat of колонны или окна.
+          next if inner_loop_edge?(edge)
           edge.find_faces
         rescue StandardError
           next
@@ -142,14 +144,23 @@ module SAC
       def merge_edges(model, edge_pids)
         Support.live_entities(model, edge_pids).each do |edge|
           next unless edge.is_a?(Sketchup::Edge) && edge.valid?
+          next if inner_loop_edge?(edge)
           faces = edge.faces
           next unless faces.length == 2
           first, second = faces
           next unless first.normal.samedirection?(second.normal)
-          next unless Support.faces_coplanar?(first, second)
+          # Без ответа самого SketchUp erase! стирает обе грани, если они чуть не в плоскости.
+          next unless first.respond_to?(:coplanar_with?) && first.coplanar_with?(second)
           edge.erase!
         rescue StandardError
           next
+        end
+      end
+
+      def inner_loop_edge?(edge)
+        edge.faces.any? do |face|
+          next false unless face.valid?
+          face.loops.any? { |loop| !loop.outer? && loop.edges.include?(edge) }
         end
       end
 
