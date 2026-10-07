@@ -133,6 +133,8 @@ module SAC
         Support.live_entities(model, edge_pids).each do |edge|
           next unless edge.is_a?(Sketchup::Edge)
           next unless edge.valid?
+          # find_faces заливает внутренний контур и уничтожает Coat of колонны или окна.
+          next if inner_loop_edge?(edge)
           edge.find_faces
         rescue StandardError
           next
@@ -142,14 +144,23 @@ module SAC
       def merge_edges(model, edge_pids)
         Support.live_entities(model, edge_pids).each do |edge|
           next unless edge.is_a?(Sketchup::Edge) && edge.valid?
+          next if inner_loop_edge?(edge)
           faces = edge.faces
           next unless faces.length == 2
           first, second = faces
           next unless first.normal.samedirection?(second.normal)
-          next unless Support.faces_coplanar?(first, second)
+          # Без ответа самого SketchUp erase! стирает обе грани, если они чуть не в плоскости.
+          next unless first.respond_to?(:coplanar_with?) && first.coplanar_with?(second)
           edge.erase!
         rescue StandardError
           next
+        end
+      end
+
+      def inner_loop_edge?(edge)
+        edge.faces.any? do |face|
+          next false unless face.valid?
+          face.loops.any? { |loop| !loop.outer? && loop.edges.include?(edge) }
         end
       end
 
@@ -241,6 +252,8 @@ module SAC
       def split_holed_faces(model, face_pids)
         Support.live_entities(model, face_pids).each do |face|
           next unless face.is_a?(Sketchup::Face) && face.valid?
+          # Линия к краю потолка или пола стирает внутренний контур и вскрывает объём.
+          next if horizontal_face?(face) || opens_closed_volume?(face)
           pairs = split_pairs(face)
           entities = Support.entities_of(face)
           next unless entities
@@ -250,6 +263,18 @@ module SAC
             next
           end
         end
+      end
+
+      def horizontal_face?(face)
+        world_normal(face).z.abs > 0.7
+      end
+
+      def opens_closed_volume?(face)
+        naked_hole = face.loops.any? do |loop|
+          !loop.outer? && loop.edges.all? { |edge| edge.faces.length == 1 }
+        end
+        attached = face.outer_loop.edges.any? { |edge| edge.faces.length > 1 }
+        naked_hole && attached
       end
 
       def split_pairs(face)

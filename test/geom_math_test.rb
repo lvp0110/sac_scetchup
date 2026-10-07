@@ -42,6 +42,18 @@ module SAC
         assert_equal [[0, 1]], pairs.map { |i, j, _dist| [i, j] }
       end
 
+      def test_hole_in_closed_hall_is_not_cut
+        assert_equal :keep, GeomMath.hole_action(true, true)
+        assert_equal :keep, GeomMath.hole_action(true, false)
+        assert_equal :keep, GeomMath.hole_action(false, false)
+        assert_equal :split, GeomMath.hole_action(false, true)
+      end
+
+      def test_ceiling_hole_is_not_cut
+        assert_equal :keep, GeomMath.hole_action(false, true, horizontal: true)
+        assert_equal :keep, GeomMath.hole_action(true, true, horizontal: true)
+      end
+
       def test_two_fold_layer_name
         assert_equal ["Окна", "Окна"], GeomMath.two_fold_parts("Окна $ Окна")
         assert_equal ["FrontMat", "RearMat"], GeomMath.two_fold_parts("  FrontMat $ RearMat ")
@@ -53,9 +65,45 @@ module SAC
         assert_equal "Грань $ Грань", GeomMath.two_fold_name(" $ ")
       end
 
+      def test_triangle_follows_the_face_normal
+        kept = GeomMath.orient_triangle([0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1])
+        assert_equal [[0, 0, 0], [1, 0, 0], [0, 1, 0]], kept
+        flipped = GeomMath.orient_triangle([0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, -1])
+        assert_equal [[0, 0, 0], [0, 1, 0], [1, 0, 0]], flipped
+      end
+
+      def test_hole_cap_closes_the_missing_floor_patch
+        # Пол не через начало координат: иначе его треугольники не дают вклад в объём.
+        cube = outward_cube_triangles(1.0).map { |tri| tri.map { |point| [point[0], point[1], point[2] + 2.0] } }
+        full = GeomMath.signed_volume(cube)
+        hole = [[0.25, 0.25, 2.0], [0.25, 0.75, 2.0], [0.75, 0.75, 2.0], [0.75, 0.25, 2.0]]
+        cap = GeomMath.signed_volume(GeomMath.loop_cap_triangles(hole.reverse))
+        assert_in_delta GeomMath.signed_volume(quad_triangles(hole)), cap, 1e-9
+
+        open_shell = cube.reject { |tri| tri.all? { |point| (point[2] - 2.0).abs < 1e-9 } }
+        open_shell.concat(floor_frame_triangles(2.0))
+        open_volume = GeomMath.signed_volume(open_shell)
+        assert_in_delta full, open_volume + cap, 1e-9
+        refute_in_delta full, open_volume, 1e-4
+      end
+
       def test_unit_conversion_roundtrip
         assert_in_delta 1.0, GeomMath.inches_to_m(1.0 / GeomMath::INCH_TO_M), 1e-9
         assert_in_delta 2.0, GeomMath.sq_inches_to_m2(GeomMath.m2_to_sq_inches(2.0)), 1e-9
+      end
+
+      def quad_triangles(quad)
+        [[quad[0], quad[1], quad[2]], [quad[0], quad[2], quad[3]]]
+      end
+
+      def floor_frame_triangles(z)
+        strips = [
+          [[0.0, 0.0, z], [0.0, 0.25, z], [1.0, 0.25, z], [1.0, 0.0, z]],
+          [[0.0, 0.75, z], [0.0, 1.0, z], [1.0, 1.0, z], [1.0, 0.75, z]],
+          [[0.0, 0.25, z], [0.0, 0.75, z], [0.25, 0.75, z], [0.25, 0.25, z]],
+          [[0.75, 0.25, z], [0.75, 0.75, z], [1.0, 0.75, z], [1.0, 0.25, z]]
+        ]
+        strips.flat_map { |quad| quad_triangles(quad) }
       end
 
       def outward_cube_triangles(size)

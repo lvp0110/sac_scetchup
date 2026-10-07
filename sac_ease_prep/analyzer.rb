@@ -80,13 +80,15 @@ module SAC
 
       def shells_for(faces, occurrence, copies)
         components(faces).map do |shell_faces|
-          boundary = boundary_edges(shell_faces)
-          closed = boundary.empty? && manifold?(shell_faces)
-          open_manifold = !boundary.empty? && manifold?(shell_faces)
+          gaps, holes = partition_boundary(shell_faces)
+          # Отверстие внутри грани — не щель: EASE закрывает его покрытием Coat of.
+          closed = gaps.empty? && manifold?(shell_faces)
+          open_manifold = !gaps.empty? && manifold?(shell_faces)
           area = shell_faces.inject(0.0) { |sum, face| sum + face.area(occurrence.transform).to_f }
           {
             faces: shell_faces,
-            boundary: boundary,
+            boundary: gaps,
+            holes: holes,
             closed: closed,
             open_manifold: open_manifold,
             nonmanifold: !manifold?(shell_faces),
@@ -133,18 +135,31 @@ module SAC
         shells
       end
 
-      def boundary_edges(faces)
+      def partition_boundary(faces)
         counts = Hash.new(0)
         edges = {}
+        inner = {}
         faces.each do |face|
           face.edges.each do |edge|
             counts[edge.persistent_id] += 1
             edges[edge.persistent_id] = edge
           end
+          face.loops.each do |loop|
+            next if loop.outer?
+            loop.edges.each { |edge| inner[edge.persistent_id] = true }
+          end
         end
-        counts.each_with_object([]) do |(pid, count), list|
-          list << edges[pid] if count == 1
+        gaps = []
+        holes = []
+        counts.each do |pid, count|
+          next unless count == 1
+          if inner[pid]
+            holes << edges[pid]
+          else
+            gaps << edges[pid]
+          end
         end
+        [gaps, holes]
       end
 
       def manifold?(faces)
@@ -334,6 +349,7 @@ module SAC
       end
 
       def check_holes(containers)
+        closed_ids = closed_shell_ids(containers)
         containers.each do |container|
           passage = []
           simple = []
@@ -341,7 +357,10 @@ module SAC
           transform = container[:occurrence].transform
           container[:faces].each do |face|
             if face.loops.any? { |loop| !loop.outer? }
-              if passage_face?(face, transform)
+              on_shell = closed_ids[face.persistent_id]
+              horizontal = Support.world_normal(face, transform).z.abs > 0.7
+              both_sides = (on_shell || horizontal) ? false : passage_face?(face, transform)
+              if GeomMath.hole_action(on_shell, both_sides, horizontal: horizontal) == :split
                 passage << face
               else
                 simple << face
@@ -379,7 +398,7 @@ module SAC
           "holes",
           "warning",
           "Отверстие ведёт в соседнюю геометрию",
-          "#{container[:occurrence].label}: #{faces.length} граней с внутренним контуром, за которым есть поверхности с обеих сторон. Импорт EASE 4 закроет дырку, и соседняя комната не войдёт в объём зала — разрежьте грань минимум на две части. Колонну и закрытую нишу можно не резать: импорт сделает покрытие Coat of.",
+          "#{container[:occurrence].label}: #{faces.length} граней с отверстием лежат вне замкнутого зала, и по обе стороны контура есть геометрия. Разрез оболочки зала сюда не входит: он превращает покрытие Coat of в щель и вскрывает объём.",
           count: faces.length,
           focus: faces,
           fix: blocked ? nil : "split_hole",
@@ -394,7 +413,7 @@ module SAC
             "holes",
             "warning",
             "Внутренний контур грани",
-            "#{container[:occurrence].label}: #{faces.length} граней с отверстием. EASE 4 убирает контур у основной грани и строит меньшую грань с обратной ориентацией и флагом Coat of. Так оставляют колонну и нишу. Окно закройте отдельной гранью на слое «Материал $ Материал».",
+            "#{container[:occurrence].label}: #{faces.length} граней с отверстием, включая потолок. Контур остаётся: линия к краю грани вскрывает замкнутый объём потолка. EASE закрывает проём покрытием Coat of.",
             count: faces.length,
             focus: faces
           )
@@ -403,11 +422,9 @@ module SAC
             "holes",
             "warning",
             "Отверстия внутри граней",
-            "#{container[:occurrence].label}: #{faces.length} граней с внутренним контуром. EASE 5 умеет искать отверстия сам, но явный разрез всё равно надёжнее.",
+            "#{container[:occurrence].label}: #{faces.length} граней с отверстием, включая потолок. Контур остаётся: линия к краю грани вскрывает замкнутый объём потолка.",
             count: faces.length,
-            focus: faces,
-            fix: "triangulate",
-            plan: { "face_pids" => pids(faces) }
+            focus: faces
           )
         end
       end
@@ -443,6 +460,17 @@ module SAC
           end
         end
         caps
+      end
+
+      def closed_shell_ids(containers)
+        ids = {}
+        containers.each do |container|
+          container[:shells].each do |shell|
+            next unless shell[:closed]
+            shell[:faces].each { |face| ids[face.persistent_id] = true }
+          end
+        end
+        ids
       end
 
       def passage_face?(face, transform)
@@ -918,20 +946,33 @@ module SAC
       def volume_with_parity(faces, transform, parity)
         sum = 0.0
         faces.each do |face|
+          normal = Support.point_array(Support.world_normal(face, transform))
           mesh = face.mesh
           mesh.polygons.each do |polygon|
             points = polygon.map { |index| Support.point_array(mesh.point_at(index.abs).transform(transform)) }
             next if points.length < 3
             origin = points[0]
             (1...(points.length - 1)).each do |index|
-              p1 = points[index]
-              p2 = points[index + 1]
+              p0, p1, p2 = GeomMath.orient_triangle(origin, points[index], points[index + 1], normal)
               p1, p2 = p2, p1 if parity[face.persistent_id] == 1
-              sum += GeomMath.triple(origin, p1, p2)
+              sum += GeomMath.triple(p0, p1, p2)
+            end
+          end
+          face.loops.each do |loop|
+            next if loop.outer?
+            next unless naked_hole?(loop)
+            points = loop.vertices.map { |vertex| Support.point_array(vertex.position.transform(transform)) }
+            GeomMath.loop_cap_triangles(points).each do |p0, p1, p2|
+              p1, p2 = p2, p1 if parity[face.persistent_id] == 1
+              sum += GeomMath.triple(p0, p1, p2)
             end
           end
         end
         sum / 6.0
+      end
+
+      def naked_hole?(loop)
+        loop.edges.all? { |edge| edge.faces.length == 1 }
       end
 
       def ray_score(faces, transform, parity)
