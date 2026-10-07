@@ -69,8 +69,14 @@ module SAC
         else
           push(dialog, "status", { "text" => "Неизвестная команда.", "level" => "error" })
         end
+      rescue Support::GeometryFault => e
+        report_geometry_fault(dialog, e.message)
       rescue StandardError => e
-        push(dialog, "status", { "text" => "#{e.class}: #{e.message}", "level" => "error" })
+        if Support.broken_geometry?(e)
+          report_geometry_fault(dialog, Support::BROKEN_GEOMETRY_MESSAGE)
+        else
+          push(dialog, "status", { "text" => "#{e.class}: #{e.message}", "level" => "error" })
+        end
         puts "SAC EASE: #{e.class}: #{e.message}"
         puts e.backtrace.first(12).join("\n")
       end
@@ -83,6 +89,9 @@ module SAC
         Highlight.apply(model, @result.error_pids)
         Sketchup.status_text = ""
         push(dialog, "report", { "report" => @result.data, "settings" => settings.to_h })
+      rescue Support::GeometryFault => e
+        Sketchup.status_text = ""
+        report_geometry_fault(dialog, e.message)
       end
 
       def export_model(dialog, model, raw_settings)
@@ -104,6 +113,39 @@ module SAC
         plan = @result.plans[issue_id]
         extra = plan["face_pids"] || plan["edge_pids"] || plan["pids"] || extra if plan
         (base + Array(extra)).uniq
+      end
+
+      def report_geometry_fault(dialog, message)
+        @result = nil
+        model = Sketchup.active_model
+        begin
+          Highlight.apply(model, []) if model
+        rescue StandardError
+          nil
+        end
+        settings = @settings || Settings.load
+        push(dialog, "report", { "report" => blocked_report(settings, message), "settings" => settings.to_h })
+      end
+
+      def blocked_report(settings, message)
+        {
+          "version" => VERSION,
+          "blocked" => message,
+          "stats" => {
+            "faces" => 0,
+            "face_copies" => 0,
+            "containers" => 0,
+            "closed" => false,
+            "room_volume_m3" => nil,
+            "ease_version" => settings.ease_version,
+            "errors" => 0,
+            "warnings" => 0
+          },
+          "categories" => CATEGORIES.map { |category| category.merge("status" => "ok", "issues" => 0) },
+          "issues" => [],
+          "shells" => [],
+          "tags" => []
+        }
       end
 
       def current_settings(raw)

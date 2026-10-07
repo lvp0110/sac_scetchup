@@ -503,14 +503,19 @@
           state.report = message.report;
           if (message.settings) state.settings = message.settings;
           syncControls();
-          const errors = state.report.stats.errors;
-          const warnings = state.report.stats.warnings;
-          setStatus(
-            errors || warnings
-              ? "Ошибок: " + errors + ", предупреждений: " + warnings + "."
-              : "Проверка закончена, критичных замечаний нет.",
-            errors ? "error" : "ok"
-          );
+          if (state.report.blocked) {
+            state.page = "overview";
+            setStatus("Проверка остановлена. Закройте SketchUp и откройте модель снова.", "error");
+          } else {
+            const errors = state.report.stats.errors;
+            const warnings = state.report.stats.warnings;
+            setStatus(
+              errors || warnings
+                ? "Ошибок: " + errors + ", предупреждений: " + warnings + "."
+                : "Проверка закончена, критичных замечаний нет.",
+              errors ? "error" : "ok"
+            );
+          }
           render();
         } else if (message.type === "status") {
           setStatus(message.text, message.level);
@@ -616,6 +621,9 @@
     }
 
     function categoryHtml(id) {
+      if (state.report && state.report.blocked) {
+        return "<div class=\"banner\">" + escapeHtml(state.report.blocked) + "</div>";
+      }
       const category = (state.report ? state.report.categories : state.categories).find((item) => item.id === id)
         || state.categories.find((item) => item.id === id);
       if (!category) return "";

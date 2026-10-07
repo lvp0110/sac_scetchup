@@ -4,7 +4,46 @@
 module SAC
   module EasePrep
     module Support
+      class GeometryFault < StandardError; end
+
+      # SketchUp иногда отдаёт OptionsProvider вместо Vertex. Это сбой памяти
+      # самого SketchUp: у OptionsProvider нет position, а разбор по битой ссылке
+      # уже нельзя продолжать.
+      BROKEN_GEOMETRY_MESSAGE = (
+        "SketchUp вернул повреждённую ссылку на вершину: вместо вершины пришёл внутренний объект OptionsProvider. " \
+        "Проверка по такой ссылке ненадёжна, это сбой SketchUp. Сохраните модель, полностью закройте SketchUp и откройте файл снова. " \
+        "После перезапуска проверка обычно проходит."
+      ).freeze
+
       module_function
+
+      def broken_geometry?(error)
+        return true if error.is_a?(GeometryFault)
+        error.is_a?(NoMethodError) && error.message.to_s.include?("OptionsProvider")
+      end
+
+      def vertex_position(vertex)
+        ensure_vertex!(vertex).position
+      end
+
+      def edge_vertices(edge)
+        ends = [edge.start, edge.end]
+        ends.each { |vertex| ensure_vertex!(vertex) }
+        ends
+      end
+
+      def ensure_vertex!(vertex)
+        return vertex if defined?(Sketchup::Vertex) && vertex.is_a?(Sketchup::Vertex)
+        raise GeometryFault, BROKEN_GEOMETRY_MESSAGE if options_provider?(vertex)
+        vertex
+      end
+
+      def options_provider?(object)
+        return true if defined?(Sketchup::OptionsProvider) && object.is_a?(Sketchup::OptionsProvider)
+        object.class.name.to_s.include?("OptionsProvider")
+      rescue StandardError
+        false
+      end
 
       def with_operation(model, name)
         model.start_operation(name, true)
@@ -47,12 +86,12 @@ module SAC
       end
 
       def face_anchor(face)
-        points = face.outer_loop.vertices.map { |vertex| point_array(vertex.position) }
+        points = face.outer_loop.vertices.map { |vertex| point_array(vertex_position(vertex)) }
         center = GeomMath.centroid(points)
         local = Geom::Point3d.new(*center)
         klass = face.classify_point(local)
         on_face = [Sketchup::Face::PointInside, Sketchup::Face::PointOnFace].include?(klass)
-        on_face ? local : face.outer_loop.vertices.first.position
+        on_face ? local : vertex_position(face.outer_loop.vertices.first)
       end
 
       def entities_of(entity)
@@ -106,9 +145,9 @@ module SAC
         plane = first.plane
         length = Math.sqrt((plane[0] * plane[0]) + (plane[1] * plane[1]) + (plane[2] * plane[2]))
         return false if length < 1.0e-9
-        first_point = first.outer_loop.vertices.first.position
+        first_point = vertex_position(first.outer_loop.vertices.first)
         second.outer_loop.vertices.all? do |vertex|
-          point = vertex.position
+          point = vertex_position(vertex)
           value = (plane[0] * point.x) + (plane[1] * point.y) + (plane[2] * point.z) + plane[3]
           (value / length).abs <= 0.001
         end && point_on_plane?(first_point, second)

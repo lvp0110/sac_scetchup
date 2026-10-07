@@ -261,10 +261,12 @@ module SAC
           best_dist = nil
           outer.each do |outer_vertex|
             loop.vertices.each do |inner_vertex|
-              distance = outer_vertex.position.distance(inner_vertex.position)
+              outer_point = Support.vertex_position(outer_vertex)
+              inner_point = Support.vertex_position(inner_vertex)
+              distance = outer_point.distance(inner_point)
               next if best_dist && distance >= best_dist
               best_dist = distance
-              best = [outer_vertex.position, inner_vertex.position]
+              best = [outer_point, inner_point]
             end
           end
           pairs << best if best && best_dist && best_dist > 1.0e-6

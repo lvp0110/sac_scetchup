@@ -51,6 +51,9 @@ module SAC
         check_annotations(occurrences)
 
         finish(stats: stats, shells: shell_rows(shells), tags: tag_rows(containers))
+      rescue StandardError => e
+        raise Support::GeometryFault, Support::BROKEN_GEOMETRY_MESSAGE if Support.broken_geometry?(e)
+        raise
       end
 
       private
@@ -274,14 +277,14 @@ module SAC
       def report_welds(shell)
         vertices = {}
         shell[:boundary].each do |edge|
-          [edge.start, edge.end].each { |vertex| vertices[vertex.persistent_id] = vertex }
+          Support.edge_vertices(edge).each { |vertex| vertices[vertex.persistent_id] = vertex }
         end
         points = []
         ids = []
         transform = shell[:occurrence].transform
         vertices.each_value do |vertex|
           ids << vertex.persistent_id
-          points << Support.point_array(vertex.position.transform(transform))
+          points << Support.point_array(Support.vertex_position(vertex).transform(transform))
         end
         pairs = GeomMath.proximity_pairs(points, @settings.weld_gap.to_f)
         return if pairs.empty?
@@ -307,8 +310,8 @@ module SAC
           container[:shells].each do |shell|
             next if shell[:boundary].empty?
             shell[:boundary].each do |edge|
-              [edge.start, edge.end].each do |vertex|
-                world = vertex.position.transform(container[:occurrence].transform)
+              Support.edge_vertices(edge).each do |vertex|
+                world = Support.vertex_position(vertex).transform(container[:occurrence].transform)
                 points << {
                   point: Support.point_array(world),
                   token: container[:occurrence].entities.object_id,
@@ -461,7 +464,7 @@ module SAC
       end
 
       def hole_origin(loop, transform)
-        points = loop.vertices.map { |vertex| Support.point_array(vertex.position.transform(transform)) }
+        points = loop.vertices.map { |vertex| Support.point_array(Support.vertex_position(vertex).transform(transform)) }
         return nil if points.empty?
         Geom::Point3d.new(*GeomMath.centroid(points))
       end
@@ -970,7 +973,7 @@ module SAC
       def ray_limit(faces, transform)
         box = Geom::BoundingBox.new
         faces.each do |face|
-          face.vertices.each { |vertex| box.add(vertex.position.transform(transform)) }
+          face.vertices.each { |vertex| box.add(Support.vertex_position(vertex).transform(transform)) }
         end
         diag = box.diagonal.to_f
         diag < 1.mm ? 10.m : diag * 2.0
@@ -980,14 +983,14 @@ module SAC
         box = Geom::BoundingBox.new
         transform = shell[:occurrence].transform
         shell[:faces].each do |face|
-          face.vertices.each { |vertex| box.add(vertex.position.transform(transform)) }
+          face.vertices.each { |vertex| box.add(Support.vertex_position(vertex).transform(transform)) }
         end
         [box.width.to_f, box.height.to_f, box.depth.to_f]
       end
 
       def convex_face?(face)
         return false if face.loops.length > 1
-        points = face.outer_loop.vertices.map { |vertex| Support.point_array(vertex.position) }
+        points = face.outer_loop.vertices.map { |vertex| Support.point_array(Support.vertex_position(vertex)) }
         GeomMath.polygon_convex?(points)
       end
 
@@ -1011,8 +1014,9 @@ module SAC
         edges.each { |edge| index[edge.persistent_id] = edge }
         vertex_edges = Hash.new { |hash, key| hash[key] = [] }
         edges.each do |edge|
-          vertex_edges[edge.start.persistent_id] << edge
-          vertex_edges[edge.end.persistent_id] << edge
+          Support.edge_vertices(edge).each do |vertex|
+            vertex_edges[vertex.persistent_id] << edge
+          end
         end
         visited = {}
         clusters = []
@@ -1025,7 +1029,7 @@ module SAC
             next if visited[current.persistent_id]
             visited[current.persistent_id] = true
             cluster << current
-            [current.start, current.end].each do |vertex|
+            Support.edge_vertices(current).each do |vertex|
               vertex_edges[vertex.persistent_id].each do |other|
                 stack << other unless visited[other.persistent_id]
               end
@@ -1040,9 +1044,9 @@ module SAC
         degrees = Hash.new(0)
         points = {}
         cluster.each do |edge|
-          [edge.start, edge.end].each do |vertex|
+          Support.edge_vertices(edge).each do |vertex|
             degrees[vertex.persistent_id] += 1
-            points[vertex.persistent_id] = Support.point_array(vertex.position)
+            points[vertex.persistent_id] = Support.point_array(Support.vertex_position(vertex))
           end
         end
         return :chain unless degrees.values.all? { |degree| degree == 2 }
@@ -1051,7 +1055,8 @@ module SAC
       end
 
       def world_edge_length(edge, transform)
-        edge.start.position.transform(transform).distance(edge.end.position.transform(transform))
+        start_point, end_point = Support.edge_vertices(edge).map { |vertex| Support.vertex_position(vertex) }
+        start_point.transform(transform).distance(end_point.transform(transform))
       end
 
       def shell_title(shell)
