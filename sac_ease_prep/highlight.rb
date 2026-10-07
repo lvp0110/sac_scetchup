@@ -20,6 +20,8 @@ module SAC
         overlay.lines = lines
         overlay.enabled = !(triangles.empty? && lines.empty?)
         model.active_view.invalidate
+      rescue Support::GeometryFault
+        raise
       rescue StandardError => e
         puts "SAC EASE highlight: #{e.class}: #{e.message}"
       end
@@ -67,7 +69,7 @@ module SAC
         return if transforms.empty?
         mesh = face.mesh
         polygons = mesh.polygons.map { |polygon| polygon.map { |index| mesh.point_at(index.abs) } }
-        loops = face.loops.map { |loop| loop.vertices.map(&:position) }
+        loops = face.loops.map { |loop| loop.vertices.map { |vertex| Support.vertex_position(vertex) } }
         transforms.each do |transform|
           normal = Support.world_normal(face, transform)
           polygons.each do |points|
@@ -89,6 +91,8 @@ module SAC
             end
           end
         end
+      rescue Support::GeometryFault
+        raise
       rescue StandardError
         nil
       end
@@ -96,9 +100,12 @@ module SAC
       def add_edge(edge, lines)
         return if lines.length >= MAX_LINE_POINTS
         transforms_for(edge).each do |transform|
-          lines << edge.start.position.transform(transform)
-          lines << edge.end.position.transform(transform)
+          start_point, end_point = Support.edge_vertices(edge).map { |vertex| Support.vertex_position(vertex) }
+          lines << start_point.transform(transform)
+          lines << end_point.transform(transform)
         end
+      rescue Support::GeometryFault
+        raise
       rescue StandardError
         nil
       end
