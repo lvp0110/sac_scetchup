@@ -349,6 +349,7 @@ module SAC
       end
 
       def check_holes(containers)
+        closed_ids = closed_shell_ids(containers)
         containers.each do |container|
           passage = []
           simple = []
@@ -356,7 +357,9 @@ module SAC
           transform = container[:occurrence].transform
           container[:faces].each do |face|
             if face.loops.any? { |loop| !loop.outer? }
-              if passage_face?(face, transform)
+              on_shell = closed_ids[face.persistent_id]
+              both_sides = on_shell ? false : passage_face?(face, transform)
+              if GeomMath.hole_action(on_shell, both_sides) == :split
                 passage << face
               else
                 simple << face
@@ -394,7 +397,7 @@ module SAC
           "holes",
           "warning",
           "Отверстие ведёт в соседнюю геометрию",
-          "#{container[:occurrence].label}: #{faces.length} граней с внутренним контуром, за которым есть поверхности с обеих сторон. Импорт EASE 4 закроет дырку, и соседняя комната не войдёт в объём зала — разрежьте грань минимум на две части. Колонну и закрытую нишу можно не резать: импорт сделает покрытие Coat of.",
+          "#{container[:occurrence].label}: #{faces.length} граней с отверстием лежат вне замкнутого зала, и по обе стороны контура есть геометрия. Разрез оболочки зала сюда не входит: он превращает покрытие Coat of в щель и вскрывает объём.",
           count: faces.length,
           focus: faces,
           fix: blocked ? nil : "split_hole",
@@ -409,7 +412,7 @@ module SAC
             "holes",
             "warning",
             "Внутренний контур грани",
-            "#{container[:occurrence].label}: #{faces.length} граней с отверстием. EASE 4 убирает контур у основной грани и строит меньшую грань с обратной ориентацией и флагом Coat of. Так оставляют колонну и нишу. Окно закройте отдельной гранью на слое «Материал $ Материал».",
+            "#{container[:occurrence].label}: #{faces.length} граней с отверстием. На замкнутом зале контур остаётся: EASE строит покрытие Coat of и объём не вскрывается. Линия от отверстия к краю грани делает щель.",
             count: faces.length,
             focus: faces
           )
@@ -418,7 +421,7 @@ module SAC
             "holes",
             "warning",
             "Отверстия внутри граней",
-            "#{container[:occurrence].label}: #{faces.length} граней с внутренним контуром. Их не нужно заливать: импорт оставит покрытие в проёме. Режьте грань только если за отверстием есть соседний объём.",
+            "#{container[:occurrence].label}: #{faces.length} граней с отверстием. На замкнутом зале контур остаётся: импорт оставляет покрытие в проёме, объём не вскрывается.",
             count: faces.length,
             focus: faces
           )
@@ -456,6 +459,17 @@ module SAC
           end
         end
         caps
+      end
+
+      def closed_shell_ids(containers)
+        ids = {}
+        containers.each do |container|
+          container[:shells].each do |shell|
+            next unless shell[:closed]
+            shell[:faces].each { |face| ids[face.persistent_id] = true }
+          end
+        end
+        ids
       end
 
       def passage_face?(face, transform)

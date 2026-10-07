@@ -210,6 +210,13 @@ module SAC
         area.to_f / (INCH_TO_M * INCH_TO_M)
       end
 
+      # Разрез внутреннего контура до края грани вскрывает замкнутую оболочку.
+      # На зале отверстие остаётся покрытием Coat of. Режется только грань вне этой оболочки.
+      def hole_action(on_closed_shell, sees_both_sides)
+        return :keep if on_closed_shell
+        sees_both_sides ? :split : :keep
+      end
+
       # Слой EASE 4 «лицевой $ тыльный»: один знак $ и имя с каждой стороны.
       def two_fold_parts(name)
         text = name.to_s.strip
