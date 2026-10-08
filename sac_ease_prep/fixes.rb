@@ -4,7 +4,6 @@
 module SAC
   module EasePrep
     module Fixes
-      SAFE_FIRST = %w[erase_stray weld close_loops merge].freeze
       TAG_FLOOR = "Пол".freeze
       TAG_CEILING = "Потолок".freeze
       TAG_WALLS = "Стены".freeze
@@ -14,15 +13,8 @@ module SAC
 
       def apply_safe(model, settings)
         Support.with_operation(model, "SAC EASE: безопасные исправления") do
-          first = Analyzer.analyze(model, settings)
-          SAFE_FIRST.each do |type|
-            plans(first, type).each { |plan| apply_plan(model, plan) }
-          end
-          second = Analyzer.analyze(model, settings)
-          plans(second, "clear_materials").each { |plan| apply_plan(model, plan) } if settings.remove_materials
-          plans(second, "reverse").each { |plan| apply_plan(model, plan) }
-          plans(second, "make_twofold").each { |plan| apply_plan(model, plan) }
-          plans(second, "triangulate").each { |plan| apply_plan(model, plan) }
+          result = Analyzer.analyze(model, settings)
+          plans(result, "make_twofold").each { |plan| apply_plan(model, plan) }
         end
       end
 
@@ -115,49 +107,16 @@ module SAC
         end
       end
 
-      def weld_pairs(model, pairs)
-        Array(pairs).each do |first_pid, second_pid|
-          first = Support.live_entity(model, first_pid)
-          second = Support.live_entity(model, second_pid)
-          next unless first.is_a?(Sketchup::Vertex) && second.is_a?(Sketchup::Vertex)
-          next if first.position.distance(second.position) <= 1.0e-6
-          entities = Support.entities_of(first)
-          next unless entities
-          entities.add_line(first.position, second.position)
-        rescue StandardError
-          next
-        end
+      def weld_pairs(_model, _pairs)
       end
 
-      def close_loops(model, edge_pids)
-        Support.live_entities(model, edge_pids).each do |edge|
-          next unless edge.is_a?(Sketchup::Edge)
-          next unless edge.valid?
-          edge.find_faces
-        rescue StandardError
-          next
-        end
+      def close_loops(_model, _edge_pids)
       end
 
-      def merge_edges(model, edge_pids)
-        Support.live_entities(model, edge_pids).each do |edge|
-          next unless edge.is_a?(Sketchup::Edge) && edge.valid?
-          faces = edge.faces
-          next unless faces.length == 2
-          first, second = faces
-          next unless first.normal.samedirection?(second.normal)
-          next unless Support.faces_coplanar?(first, second)
-          edge.erase!
-        rescue StandardError
-          next
-        end
+      def merge_edges(_model, _edge_pids)
       end
 
-      def triangulate_faces(model, face_pids)
-        Support.live_entities(model, face_pids).each do |face|
-          next unless face.is_a?(Sketchup::Face) && face.valid?
-          triangulate_face(face)
-        end
+      def triangulate_faces(_model, _face_pids)
       end
 
       def triangulate_face(face)
@@ -176,8 +135,12 @@ module SAC
       end
 
       def reverse_faces(model, face_pids)
-        Support.live_entities(model, face_pids).each do |face|
-          next unless face.is_a?(Sketchup::Face) && face.valid?
+        faces = Support.live_entities(model, face_pids).select { |face| face.is_a?(Sketchup::Face) && face.valid? }
+        reversing_ids = {}
+        faces.each { |face| reversing_ids[face.persistent_id] = true }
+        faces.each do |face|
+          next unless face.valid?
+          next if Support.reverse_merges_neighbor?(face, reversing_ids)
           face.reverse!
         end
       end
@@ -238,18 +201,7 @@ module SAC
         end
       end
 
-      def split_holed_faces(model, face_pids)
-        Support.live_entities(model, face_pids).each do |face|
-          next unless face.is_a?(Sketchup::Face) && face.valid?
-          pairs = split_pairs(face)
-          entities = Support.entities_of(face)
-          next unless entities
-          pairs.each do |start_point, end_point|
-            entities.add_line(start_point, end_point)
-          rescue StandardError
-            next
-          end
-        end
+      def split_holed_faces(_model, _face_pids)
       end
 
       def split_pairs(face)

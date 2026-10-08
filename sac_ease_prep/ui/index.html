@@ -441,6 +441,7 @@
   <script>
     const state = {
       page: "overview",
+      resultsOpen: false,
       settings: {
         ease_version: 5,
         scope: "model",
@@ -462,7 +463,6 @@
 
     const pages = [
       { id: "overview", index: "•", title: "Обзор", short: "Обзор" },
-      { id: "settings", index: "•", title: "Пороги", short: "Пороги" },
       { id: "export", index: "•", title: "Экспорт", short: "Экспорт" }
     ];
 
@@ -531,7 +531,8 @@
       const cats = (state.report && state.report.categories && state.report.categories.length)
         ? state.report.categories
         : state.categories;
-      return [pages[0]].concat(cats).concat(pages.slice(1));
+      const results = state.resultsOpen ? cats : [];
+      return [pages[0]].concat(results).concat(pages.slice(1));
     }
 
     function renderNav() {
@@ -554,7 +555,12 @@
           button.appendChild(dot);
         }
         button.addEventListener("click", () => {
-          state.page = item.id;
+          if (item.id === "overview") {
+            state.resultsOpen = !state.resultsOpen;
+            state.page = "overview";
+          } else {
+            state.page = item.id;
+          }
           render();
         });
         nav.appendChild(button);
@@ -578,41 +584,61 @@
       }
       if (report.blocked) return "<div class=\"banner\">" + escapeHtml(report.blocked) + "</div>";
       const stats = report.stats;
-      const volume = stats.room_volume_m3 == null ? "—" : stats.room_volume_m3.toFixed(2) + " м³";
-      const closed = stats.closed ? "замкнут" : "не замкнут";
+      const figures = roomFigures(report);
+      const area = figures.area;
+      const volume = figures.volume;
+      let cards = stat(area, "площадь, м²") + stat(volume, "объём, м³");
+      if (stats.errors) cards += stat(String(stats.errors), "ошибок");
+      if (stats.warnings) cards += stat(String(stats.warnings), "предупреждений");
       return ""
         + "<h2>Результат проверки</h2>"
         + "<div class=\"stats\">"
-        + stat(String(stats.faces), "граней в определениях")
-        + stat(volume, "объём зала, " + closed)
-        + stat(String(stats.errors), "ошибок")
-        + stat(String(stats.warnings), "предупреждений")
+        + cards
         + "</div>"
         + "<div class=\"cat-list\">"
         + report.categories.map((category) => {
           const label = category.status === "ok" ? "в порядке" : (category.status === "error" ? "ошибка" : "замечание");
+          const description = errorDescription(category.id);
+          const text = description ? "<em>" + escapeHtml(description) + "</em>" : "";
           return "<button type=\"button\" class=\"cat-row\" data-page=\"" + category.id + "\">"
             + "<span class=\"idx\">" + category.index + "</span>"
-            + "<span><strong>" + escapeHtml(category.title) + "</strong><em>" + escapeHtml(category.text) + "</em></span>"
+            + "<span><strong>" + escapeHtml(category.title) + "</strong>" + text + "</span>"
             + "<span class=\"pill " + category.status + "\">" + label + "</span></button>";
         }).join("")
-        + "</div>"
-        + shellTable(report.shells);
+        + "</div>";
+    }
+
+    function errorDescription(categoryId) {
+      if (!state.report || !state.report.issues) return "";
+      return state.report.issues
+        .filter((issue) => issue.category === categoryId && issue.severity === "error")
+        .map((issue) => issue.detail)
+        .filter(Boolean)
+        .join(" ");
+    }
+
+    function formatMeasure(value) {
+      const number = Number(value);
+      return Number.isFinite(number) ? number.toFixed(2) : null;
+    }
+
+    function roomFigures(report) {
+      const stats = report.stats || {};
+      const shells = report.shells || [];
+      const room = shells.find((shell) => shell.role === "room");
+      let area = formatMeasure(stats.room_area_m2);
+      let volume = formatMeasure(stats.room_volume_m3);
+      if (area == null && room) area = formatMeasure(room.area_m2);
+      if (volume == null && room && room.closed) volume = formatMeasure(room.volume_m3);
+      if (area == null) {
+        const sum = shells.reduce((total, shell) => total + (Number(shell.area_m2) || 0), 0);
+        if (sum > 0) area = sum.toFixed(2);
+      }
+      return { area: area || "—", volume: volume || "—" };
     }
 
     function stat(value, label) {
       return "<div class=\"stat\"><b>" + escapeHtml(value) + "</b><span>" + escapeHtml(label) + "</span></div>";
-    }
-
-    function shellTable(shells) {
-      if (!shells || !shells.length) return "";
-      const rows = shells.map((shell) => {
-        const role = shell.role === "room" ? "зал" : "тело";
-        const closed = shell.closed ? "да" : "нет";
-        const volume = shell.volume_m3 == null ? "—" : shell.volume_m3.toFixed(2);
-        return "<tr><td>" + escapeHtml(shell.label) + "</td><td>" + role + "</td><td>" + closed + "</td><td>" + shell.faces + "</td><td>" + shell.area_m2.toFixed(2) + "</td><td>" + volume + "</td></tr>";
-      }).join("");
-      return "<h3 class=\"section\">Оболочки</h3><table><thead><tr><th>Объект</th><th>Роль</th><th>Замкнута</th><th>Грани</th><th>Площадь, м²</th><th>Объём, м³</th></tr></thead><tbody>" + rows + "</tbody></table>";
     }
 
     function categoryHtml(id) {
@@ -620,10 +646,9 @@
         || state.categories.find((item) => item.id === id);
       if (!category) return "";
       const issues = state.report ? state.report.issues.filter((issue) => issue.category === id) : [];
-      let body = "<h2>" + escapeHtml(category.title) + "</h2><p class=\"lead\">" + escapeHtml(category.text) + "</p>";
+      let body = "<h2>" + escapeHtml(category.title) + "</h2>";
       if (!state.report) body += "<p class=\"empty\">Сначала запустите проверку.</p>";
-      else if (!issues.length) body += "<p class=\"empty\">Замечаний нет.</p>";
-      else body += issues.map(issueHtml).join("");
+      else if (issues.length) body += issues.map(issueHtml).join("");
       if (id === "materials" && state.report) body += tagTable(state.report.tags) + tagActions();
       return body;
     }
@@ -636,7 +661,8 @@
       if (issue.fixable) {
         buttons.push("<button type=\"button\" class=\"btn\" data-fix=\"" + issue.id + "\" data-fix-type=\"" + (issue.fix_type || "") + "\">Исправить</button>");
       }
-      return "<article class=\"issue " + issue.severity + "\"><div class=\"row\"><div class=\"copy\"><h3>" + escapeHtml(issue.title) + (issue.count ? " · " + issue.count : "") + "</h3><p>" + escapeHtml(issue.detail) + "</p></div><div class=\"buttons\">" + buttons.join("") + "</div></div></article>";
+      const detail = issue.severity === "error" ? "<p>" + escapeHtml(issue.detail) + "</p>" : "";
+      return "<article class=\"issue " + issue.severity + "\"><div class=\"row\"><div class=\"copy\"><h3>" + escapeHtml(issue.title) + (issue.count ? " · " + issue.count : "") + "</h3>" + detail + "</div><div class=\"buttons\">" + buttons.join("") + "</div></div></article>";
     }
 
     function tagTable(tags) {
@@ -662,8 +688,8 @@
         + field("max_curve_segments", "Сегментов на дугу", s.max_curve_segments, "1")
         + field("max_smooth_faces", "Граней в сглаженном участке", s.max_smooth_faces, "1")
         + "</div>"
-        + "<label class=\"check\"><input type=\"checkbox\" id=\"remove_materials\"" + (s.remove_materials ? " checked" : "") + "> Снимать материалы SketchUp при безопасном исправлении и оставлять Default</label>"
-        + "<label class=\"check\"><input type=\"checkbox\" id=\"triangulate_nonconvex\"" + (s.triangulate_nonconvex ? " checked" : "") + "> Заодно резать невыпуклые грани на треугольники. Лишние полигоны замедляют расчёт, включайте только если EASE спотыкается на форме.</label>";
+        + "<label class=\"check\"><input type=\"checkbox\" id=\"remove_materials\"" + (s.remove_materials ? " checked" : "") + " disabled> Цвет SketchUp на грани с акустическим тегом EASE не читает. Безопасное исправление геометрию и материалы не меняет.</label>"
+        + "<label class=\"check\"><input type=\"checkbox\" id=\"triangulate_nonconvex\"" + (s.triangulate_nonconvex ? " checked" : "") + " disabled> Невыпуклые грани не разрезаются: разрез плоской стены открывает объём зала.</label>";
     }
 
     function field(id, label, value, step) {
@@ -771,10 +797,7 @@
     });
     document.getElementById("fix-safe").addEventListener("click", () => {
       readSettings();
-      const holes = Number(state.settings.ease_version) === 5
-        ? " Для EASE 5 отверстия внутри граней будут разрезаны."
-        : " Отверстия колонн и ниш не режутся.";
-      if (!confirm("Безопасное исправление сварит близкие вершины, закроет плоские проёмы, сольёт компланарные грани с одним тегом, развернёт лицевые стороны наружу из зала и назначит двусторонним граням слой «Материал $ Материал»." + holes + " Декор и кресла не удаляются. Продолжить?")) return;
+      if (!confirm("Безопасное исправление только назначает двусторонним граням слой «Материал $ Материал». Вершины, рёбра и грани не меняются. Продолжить?")) return;
       setStatus("Исправляю…", "");
       send({ action: "fix_safe" });
     });

@@ -177,13 +177,15 @@ module SAC
       def build_stats(occurrences, containers, shells)
         unique_faces = containers.inject(0) { |sum, container| sum + container[:faces].length }
         copy_faces = occurrences.inject(0) { |sum, item| sum + item.entities.grep(Sketchup::Face).length }
-        room = shells.find { |shell| shell[:role] == :room && shell[:closed] }
+        room = shells.find { |shell| shell[:role] == :room }
+        closed = room && room[:closed]
         {
           "faces" => unique_faces,
           "face_copies" => copy_faces,
           "containers" => containers.count { |container| container[:faces].any? },
-          "closed" => !room.nil?,
-          "room_volume_m3" => room ? GeomMath.cu_inches_to_m3(room[:volume]) : nil,
+          "closed" => !closed.nil? && closed,
+          "room_area_m2" => room ? GeomMath.sq_inches_to_m2(room[:area]) : nil,
+          "room_volume_m3" => closed ? GeomMath.cu_inches_to_m3(room[:volume]) : nil,
           "ease_version" => @settings.ease_version
         }
       end
@@ -253,9 +255,7 @@ module SAC
               "Плоский проём можно закрыть гранью",
               "Замкнутый плоский контур из #{cluster.length} рёбер. Окно закройте гранью на слое «Материал $ Материал». Дверь — грань самой оболочки, без символа $.",
               count: cluster.length,
-              focus: cluster,
-              fix: "close_loops",
-              plan: { "edge_pids" => pids(cluster) }
+              focus: cluster
             )
           elsif kind == :chain
             add_issue(
@@ -277,10 +277,8 @@ module SAC
           [edge.start, edge.end].each { |vertex| vertices[vertex.persistent_id] = vertex }
         end
         points = []
-        ids = []
         transform = shell[:occurrence].transform
         vertices.each_value do |vertex|
-          ids << vertex.persistent_id
           points << Support.point_array(vertex.position.transform(transform))
         end
         pairs = GeomMath.proximity_pairs(points, @settings.weld_gap.to_f)
@@ -291,12 +289,7 @@ module SAC
           "Вершины границы почти совпадают, но не сварены",
           "#{pairs.length} пар ближе #{@settings.weld_mm} мм. Это типичная щель после раздельного моделирования стен.",
           count: pairs.length,
-          focus: shell[:boundary].first(40),
-          fix: "weld",
-          plan: {
-            "entities_token" => shell[:occurrence].entities.object_id,
-            "pairs" => pairs.map { |i, j, _dist| [ids[i], ids[j]] }
-          }
+          focus: shell[:boundary].first(40)
         )
         edge_pids
       end
@@ -354,16 +347,13 @@ module SAC
           report_simple_holes(container, simple)
           report_caps(container)
           if concave.any?
-            issue_fix = @settings.triangulate_nonconvex ? "triangulate" : nil
             add_issue(
               "holes",
               "warning",
               "Невыпуклые грани",
-              "#{container[:occurrence].label}: #{concave.length} граней невыпуклые. EASE устойчивее на простых выпуклых многоугольниках.",
+              "#{container[:occurrence].label}: #{concave.length} граней невыпуклые. EASE 4 принимает такие грани, если объём зала положительный. Автоматический разрез оболочку не трогает.",
               count: concave.length,
-              focus: concave,
-              fix: issue_fix,
-              plan: issue_fix ? { "face_pids" => pids(concave) } : nil
+              focus: concave
             )
           end
           report_curves(container)
@@ -374,16 +364,13 @@ module SAC
 
       def report_passage(container, faces)
         return if faces.empty?
-        blocked = container[:locked]
         add_issue(
           "holes",
           "warning",
           "Отверстие ведёт в соседнюю геометрию",
           "#{container[:occurrence].label}: #{faces.length} граней с внутренним контуром, за которым есть поверхности с обеих сторон. Импорт EASE 4 закроет дырку, и соседняя комната не войдёт в объём зала — разрежьте грань минимум на две части. Колонну и закрытую нишу можно не резать: импорт сделает покрытие Coat of.",
           count: faces.length,
-          focus: faces,
-          fix: blocked ? nil : "split_hole",
-          plan: blocked ? nil : { "face_pids" => pids(faces) }
+          focus: faces
         )
       end
 
@@ -405,9 +392,7 @@ module SAC
             "Отверстия внутри граней",
             "#{container[:occurrence].label}: #{faces.length} граней с внутренним контуром. EASE 5 умеет искать отверстия сам, но явный разрез всё равно надёжнее.",
             count: faces.length,
-            focus: faces,
-            fix: "triangulate",
-            plan: { "face_pids" => pids(faces) }
+            focus: faces
           )
         end
       end
@@ -542,30 +527,7 @@ module SAC
         )
       end
 
-      def report_coplanar(container)
-        edges = []
-        container[:edges].each do |edge|
-          faces = edge.faces
-          next unless faces.length == 2
-          first, second = faces
-          next if first.loops.length > 1 || second.loops.length > 1
-          next unless first.normal.samedirection?(second.normal)
-          next unless Support.faces_coplanar?(first, second)
-          next unless first.layer == second.layer
-          next if first.material != second.material
-          edges << edge
-        end
-        return if edges.empty?
-        add_issue(
-          "holes",
-          "warning",
-          "Соседние грани лежат в одной плоскости",
-          "#{container[:occurrence].label}: #{edges.length} рёбер можно стереть, грани сольются. Для EASE меньше полигонов лучше, если у них один и тот же тег.",
-          count: edges.length,
-          focus: edges,
-          fix: "merge",
-          plan: { "edge_pids" => pids(edges) }
-        )
+      def report_coplanar(_container)
       end
 
       def curved_patch?(faces)
@@ -580,6 +542,9 @@ module SAC
           parity = orientation_parity(shell[:faces], shell, room: room)
           next unless parity[:needs_fix]
           reversed = shell[:faces].select { |face| parity[:parity][face.persistent_id] == 1 }
+          reversing_ids = {}
+          reversed.each { |face| reversing_ids[face.persistent_id] = true }
+          reversed.reject! { |face| Support.reverse_merges_neighbor?(face, reversing_ids) }
           next if reversed.empty?
           title = if room
                     "Лицевые стороны зала смотрят не наружу"
@@ -623,6 +588,7 @@ module SAC
           next if shell[:nonmanifold]
           next unless shell[:open_manifold] || (shell[:boundary].any? && !shell[:closed])
           missing = shell[:faces].reject { |face| two_fold_face?(face) }
+          missing.reject! { |face| face.layer && !Support.untagged?(face.layer, @model) }
           next if missing.empty?
           blocked = shell[:copies].any?(&:locked)
           add_issue(
@@ -798,11 +764,13 @@ module SAC
         untagged = []
         containers.each do |container|
           container[:faces].each do |face|
-            [face.material, face.back_material].compact.each do |material|
-              painted << face
-              textured << material if material.texture
+            if Support.untagged?(face.layer, @model)
+              [face.material, face.back_material].compact.each do |material|
+                painted << face
+                textured << material if material.texture
+              end
+              untagged << face
             end
-            untagged << face if Support.untagged?(face.layer, @model)
           end
         end
         painted.uniq!
@@ -1142,6 +1110,7 @@ module SAC
           "face_copies" => 0,
           "containers" => 0,
           "closed" => false,
+          "room_area_m2" => nil,
           "room_volume_m3" => nil,
           "ease_version" => @settings.ease_version
         }

@@ -122,6 +122,19 @@ module SAC
         (value / length).abs <= 0.001
       end
 
+      # Переворот только этой грани сделает её сонаправленной с соседней в той же плоскости.
+      # SketchUp сольёт их в одну: пропадёт тег и в оболочке может открыться дыра.
+      def reverse_merges_neighbor?(face, reversing_ids)
+        face.edges.any? do |edge|
+          edge.faces.any? do |other|
+            next if other.equal?(face)
+            next if reversing_ids[other.persistent_id]
+            next unless faces_coplanar?(face, other)
+            !face.normal.samedirection?(other.normal)
+          end
+        end
+      end
+
       def mirrored?(transform)
         xaxis = transform.xaxis
         yaxis = transform.yaxis
